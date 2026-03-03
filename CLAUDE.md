@@ -74,7 +74,7 @@ Configured in `pyproject.toml`:
    - `processing.py` — Core generation pipeline (`StableDiffusionProcessing`)
    - `ui.py` — Gradio UI construction (`create_ui()`)
    - `scripts.py` — Script/extension plugin system (`Script` base class)
-   - `script_callbacks.py` — Event hook system (before_ui, app_started, cfg_denoiser, image_saved, etc.)
+   - `script_callbacks.py` — Event hook system (before_launch, before_ui, app_started, cfg_denoiser, image_saved, etc.)
    - `shared.py` — Global state container (opts, demo, sd_model, state)
    - `sd_models.py` — Checkpoint discovery and loading
    - `cmd_args.py` — CLI argument definitions
@@ -111,3 +111,4 @@ Defined in `backend/loader.py`: StableDiffusion (SD1.5), StableDiffusionXL, Stab
 - **Restart mechanism**: writing `tmp/restart` triggers graceful UI reload via `SD_WEBUI_RESTART` env var
 - **Environment variables** can override torch version (`TORCH_COMMAND`, `TORCH_INDEX_URL`), gradio version (`GRADIO_PACKAGE`), and requirements file (`REQS_FILE`)
 - **`--uv` flag** monkey-patches subprocess.run to redirect all pip calls to uv pip
+- **`on_before_launch` callback** — fires after `create_ui()`/`queue()` but before `launch()`, so extensions can register Gradio event handlers that appear in the initial config served to browsers (avoids race condition with `on_app_started`)
