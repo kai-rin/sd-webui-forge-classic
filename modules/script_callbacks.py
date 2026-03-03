@@ -217,6 +217,7 @@ def enumerate_callbacks():
 
 
 callback_map = dict(
+    callbacks_before_launch=[],
     callbacks_app_started=[],
     callbacks_model_loaded=[],
     callbacks_ui_tabs=[],
@@ -248,6 +249,15 @@ def clear_callbacks():
         callback_list.clear()
 
     ordered_callbacks_map.clear()
+
+
+def before_launch_callback(demo: Optional[Blocks]):
+    for c in ordered_callbacks('before_launch'):
+        try:
+            c.callback(demo)
+            timer.startup_timer.record(os.path.basename(c.script))
+        except Exception:
+            report_exception(c, 'before_launch_callback')
 
 
 def app_started_callback(demo: Optional[Blocks], app: FastAPI):
@@ -451,6 +461,13 @@ def remove_callbacks_for_function(callback_func):
     for ordered_callback_list in ordered_callbacks_map.values():
         for callback_to_remove in [cb for cb in ordered_callback_list if cb.callback == callback_func]:
             ordered_callback_list.remove(callback_to_remove)
+
+
+def on_before_launch(callback, *, name=None):
+    """register a function to be called after create_ui() but before launch(), so that
+    event handlers are included in the initial Gradio config served to browsers.
+    The gradio `Block` component is passed as the only argument."""
+    add_callback(callback_map['callbacks_before_launch'], callback, name=name, category='before_launch')
 
 
 def on_app_started(callback, *, name=None):

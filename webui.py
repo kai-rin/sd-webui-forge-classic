@@ -104,6 +104,9 @@ def webui_worker():
 
         from modules_forge.forge_canvas.canvas import canvas_js_root_path
 
+        with startup_timer.subcategory("before_launch_callback"):
+            script_callbacks.before_launch_callback(shared.demo)
+
         app, local_url, share_url = shared.demo.launch(
             share=cmd_opts.share,
             server_name=initialize_util.gradio_server_name(),
