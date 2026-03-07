@@ -112,3 +112,4 @@ Defined in `backend/loader.py`: StableDiffusion (SD1.5), StableDiffusionXL, Stab
 - **Environment variables** can override torch version (`TORCH_COMMAND`, `TORCH_INDEX_URL`), gradio version (`GRADIO_PACKAGE`), and requirements file (`REQS_FILE`)
 - **`--uv` flag** monkey-patches subprocess.run to redirect all pip calls to uv pip
 - **`on_before_launch` callback** — fires after `create_ui()`/`queue()` but before `launch()`, so extensions can register Gradio event handlers that appear in the initial config served to browsers (avoids race condition with `on_app_started`)
+- **Temporary files** (screenshots, debug output, etc.) go in `.claude/tmp/` (gitignored), not the project root

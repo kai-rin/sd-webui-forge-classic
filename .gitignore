@@ -48,3 +48,4 @@ random_test.py
 trace.json
 **/tokenizer/tokenizer.json
 /.playwright-mcp/
+/.claude/
