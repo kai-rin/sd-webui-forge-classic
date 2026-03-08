@@ -174,6 +174,9 @@ function showRestoreProgressButton(tabname, show) {
 function submit() {
     showSubmitButtons("txt2img", false);
 
+    // Clean up any stale enqueue result overlays before starting new generation
+    gradioApp().querySelector("#txt2img_gallery .enqueueResultPreview")?.remove();
+
     let id = randomId();
     localSet("txt2img_task_id", id);
 
@@ -205,6 +208,9 @@ function submit_txt2img_upscale() {
 
 function submit_img2img() {
     showSubmitButtons("img2img", false);
+
+    // Clean up any stale enqueue result overlays before starting new generation
+    gradioApp().querySelector("#img2img_gallery .enqueueResultPreview")?.remove();
 
     let id = randomId();
     localSet("img2img_task_id", id);

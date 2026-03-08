@@ -66,13 +66,11 @@ function setTitle(progress) {
 }
 
 function randomId() {
-    return (
-        "task(" +
+    return "task(" +
         Math.random().toString(36).slice(2, 7) +
         Math.random().toString(36).slice(2, 7) +
         Math.random().toString(36).slice(2, 7) +
-        ")"
-    );
+        ")";
 }
 
 // starts sending progress requests to "/internal/progress" uri, creating progressbar above progressbarContainer element and
@@ -213,6 +211,11 @@ function requestProgress(
                     let img = new Image();
                     img.onload = function () {
                         if (!livePreview) {
+                            // Remove any stale enqueue result overlay so Generate's
+                            // live preview is not hidden behind it.
+                            let staleOverlay = gallery.querySelector('.enqueueResultPreview');
+                            if (staleOverlay) gallery.removeChild(staleOverlay);
+
                             livePreview = document.createElement("div");
                             livePreview.className = "livePreview";
                             gallery.insertBefore(livePreview, gallery.firstElementChild);
