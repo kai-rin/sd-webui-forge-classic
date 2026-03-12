@@ -73,6 +73,44 @@ def long_path_prefix(path: Path) -> Path:
     return path
 
 
+def patch_gradio_sse_stream():
+    """Fix Gradio 4.40 SSE stream bug: onerror handler doesn't reset stream_status.open.
+
+    When the SSE stream (/queue/data) drops (e.g. browser timeout during long tasks),
+    Gradio's open_stream() sets stream_status.open=true but the onerror handler never
+    resets it to false. This causes subsequent submit() calls to skip reopening the
+    stream, breaking all Gradio function calls (Generate results, UI updates, etc.).
+
+    This patch adds `n.open=!1;` to the onerror handler in the minified JS so the
+    stream is properly marked as closed on error, allowing auto-recovery.
+    """
+    import gradio
+    assets_dir = Path(gradio.__file__).parent / "templates" / "frontend" / "assets"
+    if not assets_dir.exists():
+        return
+
+    for js_file in assets_dir.glob("index-*.js"):
+        try:
+            content = js_file.read_text(encoding="utf-8")
+        except Exception:
+            continue
+
+        # Match the onerror handler in open_stream (minified as Kt)
+        # Original: a.onerror=async function(){await Promise.all(Object.keys(t).map(...
+        # Patched:  a.onerror=async function(){n.open=!1;await Promise.all(Object.keys(t).map(...
+        # where 'n' is stream_status and 'a' is the EventSource stream
+        old = '.onerror=async function(){await Promise.all(Object.keys(t).map'
+        new = '.onerror=async function(){n.open=!1;await Promise.all(Object.keys(t).map'
+
+        if old in content and new not in content:
+            content = content.replace(old, new)
+            js_file.write_text(content, encoding="utf-8")
+            print(f"[Forge] Patched Gradio SSE stream recovery in {js_file.name}")
+        elif new in content:
+            pass  # Already patched
+        # else: pattern not found, different Gradio version — skip silently
+
+
 def patch_all_basics():
     import logging
 
@@ -94,3 +132,5 @@ def patch_all_basics():
     gradio.networking.url_ok = gradio_url_ok_fix
     build_loaded(safetensors.torch, "load_file")
     build_loaded(torch, "load")
+
+    patch_gradio_sse_stream()

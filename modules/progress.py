@@ -77,8 +77,61 @@ class ProgressResponse(BaseModel):
     textinfo: str | None = Field(default=None, title="Info text", description="Info text used by WebUI.")
 
 
+def debug_state():
+    """Diagnostic endpoint to inspect server-side state for debugging SSE/queue issues."""
+    from modules.call_queue import queue_lock
+    from modules_forge import main_thread
+
+    lock_status = "free"
+    if not queue_lock.acquire(blocking=False):
+        lock_status = "locked"
+    else:
+        queue_lock.release()
+
+    gradio_sessions = -1
+    gradio_sessions_error = None
+    try:
+        if shared.demo is not None and hasattr(shared.demo, '_queue') and shared.demo._queue is not None:
+            gradio_sessions = len(shared.demo._queue.pending_messages_per_session)
+    except Exception as e:
+        gradio_sessions_error = f"{type(e).__name__}: {e}"
+
+    return {
+        "current_task": current_task,
+        "pending_tasks": list(pending_tasks.keys()),
+        "finished_tasks": list(finished_tasks),
+        "queue_lock": lock_status,
+        "main_thread_waiting": len(main_thread.waiting_queue),
+        "main_thread_finished": len(main_thread.finished_tasks),
+        "gradio_sse_sessions": gradio_sessions,
+        "gradio_sessions_error": gradio_sessions_error,
+    }
+
+
+def close_session(session_hash: str = ""):
+    """Remove a Gradio SSE session from the queue cache.
+
+    Called via navigator.sendBeacon() from sseMonitor.js on tab close/reload.
+    Prevents stale session accumulation which exhausts the browser's HTTP/1.1
+    per-origin connection limit (6) when many tabs are open simultaneously.
+    """
+    if not session_hash:
+        return {"status": "error", "detail": "missing session_hash"}
+    try:
+        if shared.demo is not None and hasattr(shared.demo, "_queue") and shared.demo._queue is not None:
+            cache = shared.demo._queue.pending_messages_per_session
+            if session_hash in cache:
+                del cache[session_hash]
+                return {"status": "ok", "removed": True, "session_hash": session_hash}
+    except Exception as e:
+        return {"status": "error", "detail": f"{type(e).__name__}: {e}"}
+    return {"status": "ok", "removed": False, "session_hash": session_hash}
+
+
 def setup_progress_api(app):
     app.add_api_route("/internal/pending-tasks", get_pending_tasks, methods=["GET"])
+    app.add_api_route("/internal/debug-state", debug_state, methods=["GET"])
+    app.add_api_route("/internal/close-session", close_session, methods=["POST"])
     return app.add_api_route("/internal/progress", progressapi, methods=["POST"], response_model=ProgressResponse)
 
 
