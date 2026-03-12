@@ -111,6 +111,25 @@ def patch_gradio_sse_stream():
         # else: pattern not found, different Gradio version — skip silently
 
 
+def patch_gradio_queue_cleanup():
+    """Fix memory leak: clean_events() never removes from pending_event_ids_session.
+
+    Gradio's Queue.clean_events() marks active jobs as not alive and removes events
+    from queues, but never cleans up the pending_event_ids_session dict. This causes
+    it to grow unbounded over the server's lifetime.
+    """
+    from gradio.queueing import Queue
+
+    original_clean_events = Queue.clean_events
+
+    async def patched_clean_events(self, *, session_hash=None, event_id=None):
+        await original_clean_events(self, session_hash=session_hash, event_id=event_id)
+        if session_hash and session_hash in self.pending_event_ids_session:
+            del self.pending_event_ids_session[session_hash]
+
+    Queue.clean_events = patched_clean_events
+
+
 def patch_all_basics():
     import logging
 
@@ -134,3 +153,4 @@ def patch_all_basics():
     build_loaded(torch, "load")
 
     patch_gradio_sse_stream()
+    patch_gradio_queue_cleanup()

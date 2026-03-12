@@ -89,10 +89,13 @@ def debug_state():
         queue_lock.release()
 
     gradio_sessions = -1
+    pending_event_ids_count = -1
     gradio_sessions_error = None
     try:
         if shared.demo is not None and hasattr(shared.demo, '_queue') and shared.demo._queue is not None:
-            gradio_sessions = len(shared.demo._queue.pending_messages_per_session)
+            queue = shared.demo._queue
+            gradio_sessions = len(queue.pending_messages_per_session)
+            pending_event_ids_count = len(queue.pending_event_ids_session)
     except Exception as e:
         gradio_sessions_error = f"{type(e).__name__}: {e}"
 
@@ -104,6 +107,7 @@ def debug_state():
         "main_thread_waiting": len(main_thread.waiting_queue),
         "main_thread_finished": len(main_thread.finished_tasks),
         "gradio_sse_sessions": gradio_sessions,
+        "gradio_pending_event_ids": pending_event_ids_count,
         "gradio_sessions_error": gradio_sessions_error,
     }
 
@@ -119,16 +123,45 @@ def close_session(session_hash: str = ""):
         return {"status": "error", "detail": "missing session_hash"}
     try:
         if shared.demo is not None and hasattr(shared.demo, "_queue") and shared.demo._queue is not None:
-            cache = shared.demo._queue.pending_messages_per_session
-            if session_hash in cache:
-                del cache[session_hash]
-                return {"status": "ok", "removed": True, "session_hash": session_hash}
+            queue = shared.demo._queue
+            removed = False
+            if session_hash in queue.pending_messages_per_session:
+                del queue.pending_messages_per_session[session_hash]
+                removed = True
+            queue.pending_event_ids_session.pop(session_hash, None)
+            return {"status": "ok", "removed": removed, "session_hash": session_hash}
     except Exception as e:
         return {"status": "error", "detail": f"{type(e).__name__}: {e}"}
     return {"status": "ok", "removed": False, "session_hash": session_hash}
 
 
+def _override_heartbeat_route(app):
+    """Replace Gradio's persistent heartbeat SSE with a non-streaming response.
+
+    Gradio 4.40 opens a permanent SSE connection per tab via /heartbeat/{session_hash},
+    sending ALIVE every 15s. With HTTP/1.1's 6-connection-per-origin limit, 7+ tabs
+    exhaust all connection slots. Since this WebUI doesn't use .unload() handlers,
+    we can safely replace it with a single response that completes immediately.
+
+    The Gradio client sets this.heartbeat_event = this.stream(url) once and never
+    retries if it's already set, so the client won't reconnect after the response ends.
+    """
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import request_response
+
+    async def heartbeat_noop(session_hash: str):
+        return PlainTextResponse("data: ALIVE\n\n", media_type="text/event-stream")
+
+    for route in app.routes:
+        if hasattr(route, "path") and route.path == "/heartbeat/{session_hash}":
+            route.endpoint = heartbeat_noop
+            route.app = request_response(heartbeat_noop)
+            print("[Forge] Replaced Gradio persistent heartbeat with non-streaming version")
+            break
+
+
 def setup_progress_api(app):
+    _override_heartbeat_route(app)
     app.add_api_route("/internal/pending-tasks", get_pending_tasks, methods=["GET"])
     app.add_api_route("/internal/debug-state", debug_state, methods=["GET"])
     app.add_api_route("/internal/close-session", close_session, methods=["POST"])

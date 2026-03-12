@@ -33,14 +33,12 @@
     (function installFetchInterceptor() {
         const origFetch = window.fetch;
         window.fetch = function (resource, init) {
-            if (!capturedSessionHash) {
-                const url = (resource instanceof Request) ? resource.url : String(resource);
-                if (url.includes("/queue/data")) {
-                    try {
-                        const match = url.match(/[?&]session_hash=([^&]+)/);
-                        if (match) capturedSessionHash = decodeURIComponent(match[1]);
-                    } catch (_) {}
-                }
+            const url = (resource instanceof Request) ? resource.url : String(resource);
+            if (url.includes("/queue/data")) {
+                try {
+                    const match = url.match(/[?&]session_hash=([^&]+)/);
+                    if (match) capturedSessionHash = decodeURIComponent(match[1]);
+                } catch (_) {}
             }
             return origFetch.apply(this, arguments);
         };
