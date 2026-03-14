@@ -38,6 +38,15 @@ Configured in `pyproject.toml`:
 - **Black**: `line-length = 1024` (effectively no line wrapping)
 - **Ruff**: `target-version = "py311"`, excludes `extensions/`, rules: `N805, S307, S102, T, W, F`
 
+```bash
+# Format
+black .
+
+# Lint
+ruff check .
+ruff check --fix .  # auto-fix
+```
+
 ## Pinned Versions
 
 - Python: **3.13.x** (checked on startup, warns on mismatch)
@@ -107,6 +116,7 @@ Defined in `backend/loader.py`: StableDiffusion (SD1.5), StableDiffusionXL, Stab
 ## Key Development Patterns
 
 - **No git-cloning at runtime** — deliberate optimization over original A1111
+- **`webui-user.bat`** contains user-specific paths and ports; marked `assume-unchanged` in git — do not commit changes to this file
 - **`dynamic_args`** (`backend/args.py`) is a global mutable dict used to pass model-type flags (kontext, wan, edit, etc.) across module boundaries during inference
 - **Restart mechanism**: writing `tmp/restart` triggers graceful UI reload via `SD_WEBUI_RESTART` env var
 - **Environment variables** can override torch version (`TORCH_COMMAND`, `TORCH_INDEX_URL`), gradio version (`GRADIO_PACKAGE`), and requirements file (`REQS_FILE`)

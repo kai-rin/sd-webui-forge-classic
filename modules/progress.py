@@ -77,27 +77,32 @@ class ProgressResponse(BaseModel):
     textinfo: str | None = Field(default=None, title="Info text", description="Info text used by WebUI.")
 
 
+def _get_gradio_queue():
+    """Return the Gradio Queue instance, or None if unavailable."""
+    demo = shared.demo
+    if demo is not None:
+        return getattr(demo, '_queue', None)
+    return None
+
+
 def debug_state():
-    """Diagnostic endpoint to inspect server-side state for debugging SSE/queue issues."""
+    """Diagnostic endpoint for SSE/queue troubleshooting."""
     from modules.call_queue import queue_lock
     from modules_forge import main_thread
 
-    lock_status = "free"
-    if not queue_lock.acquire(blocking=False):
-        lock_status = "locked"
-    else:
+    if queue_lock.acquire(blocking=False):
         queue_lock.release()
+        lock_status = "free"
+    else:
+        lock_status = "locked"
 
-    gradio_sessions = -1
-    pending_event_ids_count = -1
-    gradio_sessions_error = None
-    try:
-        if shared.demo is not None and hasattr(shared.demo, '_queue') and shared.demo._queue is not None:
-            queue = shared.demo._queue
-            gradio_sessions = len(queue.pending_messages_per_session)
-            pending_event_ids_count = len(queue.pending_event_ids_session)
-    except Exception as e:
-        gradio_sessions_error = f"{type(e).__name__}: {e}"
+    queue = _get_gradio_queue()
+    if queue is not None:
+        gradio_sessions = len(queue.pending_messages_per_session)
+        pending_event_ids_count = len(queue.pending_event_ids_session)
+    else:
+        gradio_sessions = -1
+        pending_event_ids_count = -1
 
     return {
         "current_task": current_task,
@@ -108,7 +113,6 @@ def debug_state():
         "main_thread_finished": len(main_thread.finished_tasks),
         "gradio_sse_sessions": gradio_sessions,
         "gradio_pending_event_ids": pending_event_ids_count,
-        "gradio_sessions_error": gradio_sessions_error,
     }
 
 
@@ -121,18 +125,15 @@ def close_session(session_hash: str = ""):
     """
     if not session_hash:
         return {"status": "error", "detail": "missing session_hash"}
-    try:
-        if shared.demo is not None and hasattr(shared.demo, "_queue") and shared.demo._queue is not None:
-            queue = shared.demo._queue
-            removed = False
-            if session_hash in queue.pending_messages_per_session:
-                del queue.pending_messages_per_session[session_hash]
-                removed = True
-            queue.pending_event_ids_session.pop(session_hash, None)
-            return {"status": "ok", "removed": removed, "session_hash": session_hash}
-    except Exception as e:
-        return {"status": "error", "detail": f"{type(e).__name__}: {e}"}
-    return {"status": "ok", "removed": False, "session_hash": session_hash}
+
+    queue = _get_gradio_queue()
+    if queue is None:
+        return {"status": "ok", "removed": False, "session_hash": session_hash}
+
+    removed_messages = queue.pending_messages_per_session.pop(session_hash, None) is not None
+    removed_events = queue.pending_event_ids_session.pop(session_hash, None) is not None
+
+    return {"status": "ok", "removed": removed_messages or removed_events, "session_hash": session_hash}
 
 
 def _override_heartbeat_route(app):
@@ -142,9 +143,6 @@ def _override_heartbeat_route(app):
     sending ALIVE every 15s. With HTTP/1.1's 6-connection-per-origin limit, 7+ tabs
     exhaust all connection slots. Since this WebUI doesn't use .unload() handlers,
     we can safely replace it with a single response that completes immediately.
-
-    The Gradio client sets this.heartbeat_event = this.stream(url) once and never
-    retries if it's already set, so the client won't reconnect after the response ends.
     """
     from starlette.responses import PlainTextResponse
     from starlette.routing import request_response

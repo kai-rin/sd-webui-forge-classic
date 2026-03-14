@@ -78,16 +78,18 @@ def patch_gradio_sse_stream():
 
     When the SSE stream (/queue/data) drops (e.g. browser timeout during long tasks),
     Gradio's open_stream() sets stream_status.open=true but the onerror handler never
-    resets it to false. This causes subsequent submit() calls to skip reopening the
-    stream, breaking all Gradio function calls (Generate results, UI updates, etc.).
-
-    This patch adds `n.open=!1;` to the onerror handler in the minified JS so the
-    stream is properly marked as closed on error, allowing auto-recovery.
+    resets it to false. Subsequent submit() calls then skip reopening the stream,
+    breaking all Gradio function calls. This patch inserts `n.open=!1;` into the
+    onerror handler so the stream is properly marked as closed on error.
     """
     import gradio
     assets_dir = Path(gradio.__file__).parent / "templates" / "frontend" / "assets"
     if not assets_dir.exists():
         return
+
+    # Minified pattern: 'n' = stream_status, 'a' = EventSource stream
+    unpatched = '.onerror=async function(){await Promise.all(Object.keys(t).map'
+    patched = '.onerror=async function(){n.open=!1;await Promise.all(Object.keys(t).map'
 
     for js_file in assets_dir.glob("index-*.js"):
         try:
@@ -95,20 +97,13 @@ def patch_gradio_sse_stream():
         except Exception:
             continue
 
-        # Match the onerror handler in open_stream (minified as Kt)
-        # Original: a.onerror=async function(){await Promise.all(Object.keys(t).map(...
-        # Patched:  a.onerror=async function(){n.open=!1;await Promise.all(Object.keys(t).map(...
-        # where 'n' is stream_status and 'a' is the EventSource stream
-        old = '.onerror=async function(){await Promise.all(Object.keys(t).map'
-        new = '.onerror=async function(){n.open=!1;await Promise.all(Object.keys(t).map'
+        if patched in content:
+            continue
+        if unpatched not in content:
+            continue
 
-        if old in content and new not in content:
-            content = content.replace(old, new)
-            js_file.write_text(content, encoding="utf-8")
-            print(f"[Forge] Patched Gradio SSE stream recovery in {js_file.name}")
-        elif new in content:
-            pass  # Already patched
-        # else: pattern not found, different Gradio version — skip silently
+        js_file.write_text(content.replace(unpatched, patched), encoding="utf-8")
+        print(f"[Forge] Patched Gradio SSE stream recovery in {js_file.name}")
 
 
 def patch_gradio_queue_cleanup():
@@ -124,8 +119,8 @@ def patch_gradio_queue_cleanup():
 
     async def patched_clean_events(self, *, session_hash=None, event_id=None):
         await original_clean_events(self, session_hash=session_hash, event_id=event_id)
-        if session_hash and session_hash in self.pending_event_ids_session:
-            del self.pending_event_ids_session[session_hash]
+        if session_hash and session_hash not in self.pending_messages_per_session:
+            self.pending_event_ids_session.pop(session_hash, None)
 
     Queue.clean_events = patched_clean_events
 
