@@ -113,6 +113,8 @@ Defined in `backend/loader.py`: StableDiffusion (SD1.5), StableDiffusionXL, Stab
 | `ui-config.json` | Gradio component defaults |
 | `styles.csv` | Saved prompt styles |
 
+**Preset vs ui-config.json**: `presets.py` defines per-architecture defaults (sampler, steps, CFG). `main_entry.py:forge_main_entry()` registers `root_block.load` (page load) and `ui_forge_preset.change` (explicit switch) handlers. Page-load handler (`on_preset_load`) only sets checkpoint/VAE/dtype and UI structure — sampler/steps/CFG are skipped (`gr.skip()`) to preserve ui-config.json defaults. The explicit switch handler (`on_preset_change`) applies all values.
+
 ## Key Development Patterns
 
 - **No git-cloning at runtime** — deliberate optimization over original A1111
