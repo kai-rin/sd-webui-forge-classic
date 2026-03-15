@@ -22,6 +22,7 @@ python launch.py --skip-install
 python launch.py --skip-prepare-environment
 
 # API-only mode (no Gradio UI)
+# Note: --nowebui skips setup_progress_api() — custom endpoints (/internal/*) and heartbeat override are unavailable
 python launch.py --nowebui
 
 # See all flags
@@ -72,7 +73,7 @@ ruff check --fix .  # auto-fix
    - `initialization.py` — CUDA init, GPU warmup, tokenizer decompression
    - `main_thread.py` — **Single-threaded task queue** (all major inference serialized on main thread; Gradio runs in a daemon thread)
    - `main_entry.py` — Checkpoint manager UI, model selection, preset handling
-   - `patch_basic.py` — Monkey-patches gradio, safetensors, torch.load
+   - `patch_basic.py` — Monkey-patches gradio (SSE stream recovery, heartbeat disable, queue cleanup), safetensors, torch.load
    - `uv_hook.py` — Monkey-patches `subprocess.run` to redirect pip → uv
    - `presets.py` — Per-architecture defaults (sampler, scheduler, steps, CFG) for sd/xl/flux/klein/qwen/lumina/zit/wan/anima
    - `config.py` — `always_disabled_extensions` blocklist
@@ -87,6 +88,7 @@ ruff check --fix .  # auto-fix
    - `shared.py` — Global state container (opts, demo, sd_model, state)
    - `sd_models.py` — Checkpoint discovery and loading
    - `cmd_args.py` — CLI argument definitions
+   - `progress.py` — Progress polling, diagnostic endpoints (`/internal/debug-state`, `/internal/close-session`), heartbeat route override
 
 ### Main Thread Model
 
@@ -124,4 +126,7 @@ Defined in `backend/loader.py`: StableDiffusion (SD1.5), StableDiffusionXL, Stab
 - **Environment variables** can override torch version (`TORCH_COMMAND`, `TORCH_INDEX_URL`), gradio version (`GRADIO_PACKAGE`), and requirements file (`REQS_FILE`)
 - **`--uv` flag** monkey-patches subprocess.run to redirect all pip calls to uv pip
 - **`on_before_launch` callback** — fires after `create_ui()`/`queue()` but before `launch()`, so extensions can register Gradio event handlers that appear in the initial config served to browsers (avoids race condition with `on_app_started`)
+- **Starlette Route patching**: `route.endpoint` alone is insufficient; must also set `route.app = request_response(new_endpoint)` because Starlette caches the ASGI app at construction time
+- **SSE session cleanup**: `javascript/sseMonitor.js` sends `sendBeacon('/internal/close-session')` on `beforeunload` to prevent stale session accumulation (HTTP/1.1 max 6 connections per origin)
+- **Gradio heartbeat disabled**: `/heartbeat/{session_hash}` replaced with non-streaming noop to free persistent connections for multi-tab use
 - **Temporary files** (screenshots, debug output, etc.) go in `.claude/tmp/` (gitignored), not the project root
