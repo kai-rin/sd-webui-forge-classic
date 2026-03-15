@@ -262,7 +262,7 @@ def forge_main_entry():
         queue=False,
         show_progress=False,
     ).then(js="clickLoraRefresh", fn=None, queue=False, show_progress=False)
-    Context.root_block.load(on_preset_change, inputs=[ui_forge_preset], outputs=output_targets, queue=False, show_progress=False)
+    Context.root_block.load(on_preset_load, inputs=[ui_forge_preset], outputs=output_targets, queue=False, show_progress=False)
 
     refresh_model_loading_parameters()
 
@@ -273,25 +273,62 @@ def _load_presets(ui_checkpoint: str, ui_vae: list[str], ui_forge_unet_dtype: st
     checkpoint_change(ui_checkpoint, ui_forge_preset, save=True, refresh=True)
 
 
+def _build_d_args(preset: str) -> dict:
+    if use_shift(preset):
+        return {"visible": True, "label": "Shift"}
+    elif use_distill(preset):
+        return {"visible": True, "label": "Distilled CFG Scale"}
+    return {"visible": False}
+
+
+def _build_batch_args(preset: str, include_value: bool = False) -> dict:
+    base = {"minimum": 1, "maximum": 241, "step": 16, "label": "Frames"} if preset == "wan" else {"minimum": 1, "maximum": 8, "step": 1, "label": "Batch Size"}
+    if include_value:
+        base["value"] = 1
+    return base
+
+
+def _build_model_updates(preset: str) -> list:
+    return [
+        gr.update(value=getattr(shared.opts, f"forge_checkpoint_{preset}", shared.opts.sd_model_checkpoint)),
+        gr.update(value=[os.path.basename(m) for m in getattr(shared.opts, f"forge_additional_modules_{preset}", [])]),
+        gr.update(value=getattr(shared.opts, f"forge_unet_storage_dtype_{preset}", "Automatic")),
+    ]
+
+
+def on_preset_load(preset: str):
+    """Page-load handler: sets checkpoint/VAE/dtype and UI structure,
+    but skips sampler/steps/cfg values to preserve ui-config.json defaults."""
+    d_args = _build_d_args(preset)
+    batch_args = _build_batch_args(preset)
+
+    return [
+        *_build_model_updates(preset),
+        # ui_txt2img_steps, ui_txt2img_hr_steps, ui_img2img_steps
+        gr.skip(), gr.skip(), gr.skip(),
+        # ui_txt2img_sampler, ui_img2img_sampler, ui_txt2img_scheduler, ui_img2img_scheduler
+        gr.skip(), gr.skip(), gr.skip(), gr.skip(),
+        # ui_txt2img_width, ui_img2img_width, ui_txt2img_height, ui_img2img_height
+        gr.skip(), gr.skip(), gr.skip(), gr.skip(),
+        # ui_txt2img_cfg, ui_txt2img_hr_cfg, ui_img2img_cfg
+        gr.skip(), gr.skip(), gr.skip(),
+        # ui_txt2img_distilled_cfg, ui_txt2img_hr_distilled_cfg, ui_img2img_distilled_cfg — UI structure only
+        gr.update(**d_args), gr.update(**d_args), gr.update(**d_args),
+        # ui_txt2img_batch_size, ui_img2img_batch_size — UI structure only
+        gr.update(**batch_args), gr.update(**batch_args),
+    ]
+
+
 def on_preset_change(preset: str):
     assert preset is not None
     shared.opts.set("forge_preset", preset)
     shared.opts.save(shared.config_filename)
 
-    if use_shift(preset):
-        d_args = {"visible": True, "label": "Shift"}
-    elif use_distill(preset):
-        d_args = {"visible": True, "label": "Distilled CFG Scale"}
-    else:
-        d_args = {"visible": False}
-
-    batch_args = {"minimum": 1, "maximum": 241, "step": 16, "label": "Frames", "value": 1} if preset == "wan" else {"minimum": 1, "maximum": 8, "step": 1, "label": "Batch Size", "value": 1}
+    d_args = _build_d_args(preset)
+    batch_args = _build_batch_args(preset, include_value=True)
 
     return [
-        # ui_checkpoint, ui_vae, ui_forge_unet_dtype
-        gr.update(value=getattr(shared.opts, f"forge_checkpoint_{preset}", shared.opts.sd_model_checkpoint)),
-        gr.update(value=[os.path.basename(m) for m in getattr(shared.opts, f"forge_additional_modules_{preset}", [])]),
-        gr.update(value=getattr(shared.opts, f"forge_unet_storage_dtype_{preset}", "Automatic")),
+        *_build_model_updates(preset),
         # ui_txt2img_steps, ui_txt2img_hr_steps, ui_img2img_steps
         gr.update(value=v) if (v := getattr(shared.opts, f"{preset}_t2i_step", 20)) > 0 else gr.skip(),
         gr.update(value=v) if (v := getattr(shared.opts, f"{preset}_t2i_hr_step", 20)) > 0 else gr.skip(),
