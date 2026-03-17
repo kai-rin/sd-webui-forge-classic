@@ -48,16 +48,30 @@ function formatTime(secs) {
 }
 
 let originalAppTitle = undefined;
+const activeTitleTasks = new Map();
 
 onUiLoaded(function () {
     originalAppTitle = document.title;
 });
 
-function setTitle(progress) {
+function setTitle(progress, taskId) {
+    if (taskId) {
+        if (progress) {
+            activeTitleTasks.set(taskId, progress);
+        } else {
+            activeTitleTasks.delete(taskId);
+        }
+    }
+
+    let displayProgress = "";
+    for (const [, text] of activeTitleTasks) {
+        displayProgress = text;
+    }
+
     let title = originalAppTitle;
 
-    if (opts.show_progress_in_title && progress) {
-        title = "[" + progress.trim() + "] " + title;
+    if (opts.show_progress_in_title && displayProgress) {
+        title = "[" + displayProgress.trim() + "] " + title;
     }
 
     if (document.title != title) {
@@ -126,7 +140,7 @@ function requestProgress(
         releaseWakeLock();
         if (!divProgress) return;
 
-        setTitle("");
+        setTitle("", id_task);
         parentProgressbar.removeChild(divProgress);
         if (gallery && livePreview) gallery.removeChild(livePreview);
         atEnd();
@@ -158,7 +172,7 @@ function requestProgress(
                     progressText += " ETA: " + formatTime(res.eta);
                 }
 
-                setTitle(progressText);
+                setTitle(progressText, id_task);
 
                 if (res.textinfo && res.textinfo.indexOf("\n") == -1) {
                     progressText = res.textinfo + " " + progressText;

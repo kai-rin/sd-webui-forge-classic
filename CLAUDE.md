@@ -131,3 +131,4 @@ Defined in `backend/loader.py`: StableDiffusion (SD1.5), StableDiffusionXL, Stab
 - **SSE session cleanup**: `javascript/sseMonitor.js` sends `sendBeacon('/internal/close-session')` on `beforeunload` to prevent stale session accumulation (HTTP/1.1 max 6 connections per origin)
 - **Gradio heartbeat disabled**: `/heartbeat/{session_hash}` replaced with non-streaming noop to free persistent connections for multi-tab use
 - **Temporary files** (screenshots, debug output, etc.) go in `.claude/tmp/` (gitignored), not the project root
+- **JS file caching**: Gradio serves `javascript/*.js` with `?{mtime}` query — editing a JS file requires server restart for the new version to be served. Simply reloading the page is insufficient if the server process is the same
