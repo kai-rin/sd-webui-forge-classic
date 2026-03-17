@@ -126,6 +126,7 @@ Defined in `backend/loader.py`: StableDiffusion (SD1.5), StableDiffusionXL, Stab
 - **Environment variables** can override torch version (`TORCH_COMMAND`, `TORCH_INDEX_URL`), gradio version (`GRADIO_PACKAGE`), and requirements file (`REQS_FILE`)
 - **`--uv` flag** monkey-patches subprocess.run to redirect all pip calls to uv pip
 - **`on_before_launch` callback** — fires after `create_ui()`/`queue()` but before `launch()`, so extensions can register Gradio event handlers that appear in the initial config served to browsers (avoids race condition with `on_app_started`)
+- **`image_saved_callback` gotcha** — `save_image()` は `image_saved_callback` を同期発火する。拡張が `shared.opts.grid_save=True` 等を一時的に強制すると、Eagle 等の他拡張のコールバックも意図せず発火する。コールバックを避けるには PIL の `.save()` で直接保存する
 - **Starlette Route patching**: `route.endpoint` alone is insufficient; must also set `route.app = request_response(new_endpoint)` because Starlette caches the ASGI app at construction time
 - **SSE session cleanup**: `javascript/sseMonitor.js` sends `sendBeacon('/internal/close-session')` on `beforeunload` to prevent stale session accumulation (HTTP/1.1 max 6 connections per origin)
 - **Gradio heartbeat disabled**: `/heartbeat/{session_hash}` replaced with non-streaming noop to free persistent connections for multi-tab use
