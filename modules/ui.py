@@ -900,8 +900,8 @@ def create_ui():
         settings.add_functionality(demo)
 
         update_image_cfg_scale_visibility = lambda: gr.update(visible=False)
-        settings.text_settings.change(fn=update_image_cfg_scale_visibility, outputs=[image_cfg_scale])
-        demo.load(fn=update_image_cfg_scale_visibility, outputs=[image_cfg_scale])
+        settings.text_settings.change(fn=update_image_cfg_scale_visibility, outputs=[image_cfg_scale], queue=False)
+        demo.load(fn=update_image_cfg_scale_visibility, outputs=[image_cfg_scale], queue=False)
 
         modelmerger_ui.setup_ui(dummy_component=dummy_component, sd_model_checkpoint_component=main_entry.ui_checkpoint)
 
