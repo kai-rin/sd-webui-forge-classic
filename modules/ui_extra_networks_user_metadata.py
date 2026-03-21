@@ -73,7 +73,7 @@ class UserMetadataEditor:
 
         preview_url = item.get("preview", None)
 
-        if not preview_url:
+        if not preview_url and "filename" in item:
             filename, _ = os.path.splitext(item["filename"])
             preview_url = self.page.find_preview(filename)
             item["preview"] = preview_url
@@ -177,6 +177,9 @@ class UserMetadataEditor:
             return self.get_card_html(name), "There is no image in gallery to save as a preview."
 
         item = self.page.items.get(name, {})
+
+        if "local_preview" not in item:
+            return self.get_card_html(name), "Item not found."
 
         index = int(index)
         index = 0 if index < 0 else index

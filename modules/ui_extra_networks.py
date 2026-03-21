@@ -157,12 +157,18 @@ def get_single_card(page: str = "", tabname: str = "", name: str = ""):
 
     page = next(iter([x for x in extra_pages if x.name == page]), None)
 
+    if page is None:
+        return JSONResponse({"html": ""})
+
     try:
         item = page.create_item(name, enable_filter=False)
         page.items[name] = item
     except Exception as e:
         errors.display(e, "creating item for extra network")
         item = page.items.get(name)
+
+    if item is None:
+        return JSONResponse({"html": ""})
 
     page.read_user_metadata(item, use_cache=False)
     item_html = page.create_item_html(tabname, item, shared.html("extra-networks-card.html"))
