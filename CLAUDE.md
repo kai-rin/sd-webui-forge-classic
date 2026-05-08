@@ -103,6 +103,11 @@ The main thread runs `main_thread.loop()` (blocking deque consumer). All GPU-tou
 - Callback hooks registered via `modules/script_callbacks.py`
 - Third-party `sd-webui-controlnet` and `multidiffusion-upscaler` are force-disabled (conflicts with built-in versions)
 
+### Extension Development (Fork Pattern)
+- Extensions under `extensions/` may be forked repos with `origin` (fork) + `upstream` (source) remotes
+- Custom branches (e.g., `custom-main`) track `origin`, sync via: `git fetch upstream && git checkout main && git pull upstream main && git checkout custom-main && git rebase main`
+- Run `/extension-compat-check extensions/<name>` before first launch with a new extension
+
 ### Supported Model Architectures
 
 Defined in `backend/loader.py`: StableDiffusion (SD1.5), StableDiffusionXL, StableDiffusionXLRefiner, Flux, Flux2 (Klein), Wan, QwenImage, Lumina2, ZImage, Chroma, Anima. Detection uses `huggingface_guess` (inspects state dict keys).
