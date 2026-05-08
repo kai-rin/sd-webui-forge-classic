@@ -15,12 +15,13 @@ class Chroma(ForgeDiffusionEngine):
 
     def __init__(self, estimated_config, huggingface_components):
         super().__init__(estimated_config, huggingface_components)
-        self.is_inpaint = False
 
         clip = CLIP(model_dict={"t5xxl": huggingface_components["text_encoder"]}, tokenizer_dict={"t5xxl": huggingface_components["tokenizer"]})
 
         vae = VAE(model=huggingface_components["vae"])
+
         k_predictor = PredictionFlux(mu=1.0)
+
         unet = UnetPatcher.from_model(model=huggingface_components["transformer"], diffusers_scheduler=None, k_predictor=k_predictor, config=estimated_config)
 
         self.text_processing_engine_t5 = T5TextProcessingEngine(

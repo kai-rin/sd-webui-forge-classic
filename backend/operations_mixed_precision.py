@@ -6,7 +6,12 @@ import torch
 
 from backend.memory_management import cast_to_device, logger
 
-from .operations import ForgeOperations, main_stream_worker, weights_manual_cast
+from .operations import (
+    ForgeOperations,
+    ForgeWeights,
+    main_stream_worker,
+    weights_manual_cast,
+)
 from .quant_ops import (  # noqa
     QUANT_ALGOS,
     QuantizedTensor,
@@ -22,7 +27,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
         _full_precision_mm = full_precision_mm
         _disabled = disabled
 
-        class Linear(torch.nn.Module):
+        class Linear(torch.nn.Module, ForgeWeights):
             def __init__(
                 self,
                 in_features: int,
@@ -101,7 +106,19 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
                             orig_dtype=MixedPrecisionOps._compute_dtype,
                             orig_shape=(self.out_features, self.in_features),
                         )
+                    elif self.quant_format == "mxfp8":
+                        block_scale = self._load_scale_param(state_dict, prefix, "weight_scale", device, manually_loaded_keys, dtype=torch.uint8)
 
+                        if block_scale is None:
+                            raise ValueError(f"Missing MXFP8 block scales for layer {layer_name}")
+
+                        block_scale = block_scale.view(torch.float8_e8m0fnu)
+
+                        params = layout_cls.Params(
+                            scale=block_scale,
+                            orig_dtype=MixedPrecisionOps._compute_dtype,
+                            orig_shape=(self.out_features, self.in_features),
+                        )
                     elif self.quant_format == "nvfp4":
                         tensor_scale = self._load_scale_param(state_dict, prefix, "weight_scale_2", device, manually_loaded_keys)
                         block_scale = self._load_scale_param(state_dict, prefix, "weight_scale", device, manually_loaded_keys, dtype=torch.float8_e4m3fn)
@@ -143,10 +160,6 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
                 else:
                     sd = {}
 
-                if not hasattr(self, "weight"):
-                    logger.warning("Warning: state dict on uninitialized op {}".format(prefix))
-                    return sd
-
                 if self.bias is not None:
                     sd["{}bias".format(prefix)] = self.bias
 
@@ -172,7 +185,7 @@ def mixed_precision_ops(quant_config={}, compute_dtype=torch.bfloat16, full_prec
                 reshaped_3d = False
                 compute_dtype = input.dtype
 
-                if getattr(self, "layout_type", None) is not None and not isinstance(input, QuantizedTensor) and not self._full_precision_mm:
+                if getattr(self, "layout_type", None) is not None and not isinstance(input, QuantizedTensor) and not self._full_precision_mm and not getattr(self, "forge_force_cast_weights", False) and len(self.weight_function) == 0 and len(self.bias_function) == 0:
                     input_reshaped = input.reshape(-1, input_shape[2]) if input.ndim == 3 else input
 
                     if input_reshaped.ndim == 2:

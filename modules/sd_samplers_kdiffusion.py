@@ -19,7 +19,7 @@ samplers_k_diffusion = [
     ("Flux Realistic" if opts.forbidden_knowledge else "DPM++ 2s a RF", "sample_dpmpp_2s_ancestral_RF", ["sample_dpmpp_2s_ancestral_RF"], {}),
     ("Euler a", "sample_euler_ancestral", ["k_euler_a", "k_euler_ancestral"], {"uses_ensd": True}),
     ("Euler", "sample_euler", ["k_euler"], {}),
-    ("ER SDE", "sample_er_sde", ["er_side"], {}),
+    ("ER SDE", "sample_er_sde", ["er_sde"], {}),
     ("LCM", "sample_lcm", ["k_lcm"], {}),
     ("LMS", "sample_lms", ["k_lms"], {}),
     ("Heun", "sample_heun", ["k_heun"], {"second_order": True}),
@@ -86,17 +86,19 @@ class KDiffusionSampler(sd_samplers_common.Sampler):
             else:
                 scheduler_name = self.config.options.get("scheduler", None)
 
+            if scheduler_name is None and not p.sd_model.is_webui_legacy_model():
+                scheduler_name = "Normal"
+
         scheduler = sd_schedulers.schedulers_map.get(scheduler_name)
 
         m_sigma_min, m_sigma_max = self.model_wrap.sigmas[0].item(), self.model_wrap.sigmas[-1].item()
-        sigma_min, sigma_max = (0.1, 10) if opts.use_old_karras_scheduler_sigmas else (m_sigma_min, m_sigma_max)
 
         if p.sampler_noise_scheduler_override:
             sigmas = p.sampler_noise_scheduler_override(steps)
         elif scheduler is None or scheduler.function is None:
             sigmas = self.model_wrap.get_sigmas(steps)
         else:
-            sigmas_kwargs = {"sigma_min": sigma_min, "sigma_max": sigma_max}
+            sigmas_kwargs = {"sigma_min": m_sigma_min, "sigma_max": m_sigma_max}
 
             if scheduler.label != "Automatic" and not p.is_hr_pass:
                 p.extra_generation_params["Schedule type"] = scheduler.label

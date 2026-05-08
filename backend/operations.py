@@ -4,7 +4,7 @@
 
 import contextlib
 import time
-from typing import Callable
+from typing import Callable, Union
 
 import torch
 
@@ -61,7 +61,7 @@ def get_weight_and_bias(layer: torch.nn.Module) -> tuple[torch.Tensor, torch.Ten
 
 
 def weights_manual_cast(
-    layer: torch.nn.Module,
+    layer: Union[torch.nn.Module, "ForgeWeights"],
     x: torch.Tensor,
     *,
     dtype: torch.dtype = None,
@@ -79,8 +79,9 @@ def weights_manual_cast(
 
     non_blocking = memory_management.device_supports_non_blocking(target_device)
     weight, bias = None, None
-    weight_has_function: bool = weight_fn is not None
-    bias_has_function: bool = bias_fn is not None
+
+    weight_has_function: bool = len(layer.weight_function) > 0 or weight_fn is not None
+    bias_has_function: bool = len(layer.bias_function) > 0 or bias_fn is not None
 
     weight_args = dict(device=target_device, dtype=dtype or target_dtype, non_blocking=non_blocking)
     if skip_weight_dtype or weight_has_function:
@@ -119,14 +120,20 @@ def weights_manual_cast(
     bias_a = bias
 
     if weight_has_function:
-        weight = weight_fn(weight)
+        if weight_fn is not None:
+            weight = weight_fn(weight)
         if not skip_weight_dtype:
             weight = weight.to(dtype=target_dtype)
+        for f in layer.weight_function:
+            weight = f(weight)
 
     if bias_has_function:
-        bias = bias_fn(bias)
+        if bias_fn is not None:
+            bias = bias_fn(bias)
         if not skip_bias_dtype:
             bias = bias.to(dtype=target_dtype)
+        for f in layer.bias_function:
+            bias = f(bias)
 
     loras: dict[str, list[torch.Tensor]] = getattr(layer, "forge_online_loras", dict())
 
@@ -168,8 +175,14 @@ current_bnb_dtype: str = None
 # region Forge OPs
 
 
+class ForgeWeights:
+    parameters_manual_cast = False
+    weight_function = []
+    bias_function = []
+
+
 class ForgeOperations:
-    class Linear(torch.nn.Linear):
+    class Linear(torch.nn.Linear, ForgeWeights):
         def __init__(self, *args, **kwargs):
             kwargs["device"] = current_device
             kwargs["dtype"] = current_dtype
@@ -188,7 +201,7 @@ class ForgeOperations:
                 weight, bias = get_weight_and_bias(self)
                 return torch.nn.functional.linear(x, weight, bias)
 
-    class Conv1d(torch.nn.Conv1d):
+    class Conv1d(torch.nn.Conv1d, ForgeWeights):
 
         def __init__(self, *args, **kwargs):
             kwargs["device"] = current_device
@@ -208,7 +221,7 @@ class ForgeOperations:
                 weight, bias = get_weight_and_bias(self)
                 return super()._conv_forward(x, weight, bias)
 
-    class Conv2d(torch.nn.Conv2d):
+    class Conv2d(torch.nn.Conv2d, ForgeWeights):
 
         def __init__(self, *args, **kwargs):
             kwargs["device"] = current_device
@@ -228,7 +241,7 @@ class ForgeOperations:
                 weight, bias = get_weight_and_bias(self)
                 return super()._conv_forward(x, weight, bias)
 
-    class Conv3d(torch.nn.Conv3d):
+    class Conv3d(torch.nn.Conv3d, ForgeWeights):
 
         def __init__(self, *args, **kwargs):
             kwargs["device"] = current_device
@@ -259,7 +272,7 @@ class ForgeOperations:
                 weight, bias = get_weight_and_bias(self)
                 return super()._conv_forward(x, weight, bias)
 
-    class GroupNorm(torch.nn.GroupNorm):
+    class GroupNorm(torch.nn.GroupNorm, ForgeWeights):
 
         def __init__(self, *args, **kwargs):
             kwargs["device"] = current_device
@@ -278,7 +291,7 @@ class ForgeOperations:
             else:
                 return super().forward(x)
 
-    class LayerNorm(torch.nn.LayerNorm):
+    class LayerNorm(torch.nn.LayerNorm, ForgeWeights):
 
         def __init__(self, *args, **kwargs):
             kwargs["device"] = current_device
@@ -297,7 +310,7 @@ class ForgeOperations:
             else:
                 return super().forward(x)
 
-    class RMSNorm(torch.nn.RMSNorm):
+    class RMSNorm(torch.nn.RMSNorm, ForgeWeights):
 
         def __init__(self, *args, add=False, **kwargs):
             kwargs["device"] = current_device
@@ -326,7 +339,7 @@ class ForgeOperations:
             else:
                 return super().forward(x)
 
-    class Embedding(torch.nn.Embedding):
+    class Embedding(torch.nn.Embedding, ForgeWeights):
 
         def __init__(self, *args, **kwargs):
             kwargs["device"] = current_device
@@ -363,7 +376,7 @@ class ForgeOperationsInt8(ForgeOperations):
     excluded_names = []
     _is_prequantized = None
 
-    class Linear(torch.nn.Linear):
+    class Linear(torch.nn.Linear, ForgeWeights):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.weight_scale = None
@@ -542,7 +555,7 @@ if memory_management.bnb_enabled():
     )
 
     class ForgeOperationsBNB4bits(ForgeOperations):
-        class Linear(ForgeLoader4Bit):
+        class Linear(ForgeLoader4Bit, ForgeWeights):
             def __init__(self, *args, **kwargs):
                 super().__init__(device=current_device, dtype=current_dtype, quant_type=current_bnb_dtype)
                 self.parameters_manual_cast = current_manual_cast_enabled
@@ -579,7 +592,7 @@ from backend.operations_gguf import dequantize_tensor
 
 
 class ForgeOperationsGGUF(ForgeOperations):
-    class Linear(torch.nn.Module):
+    class Linear(torch.nn.Module, ForgeWeights):
         def __init__(self, *args, **kwargs):
             super().__init__()
             self.dummy = {"device": current_device, "dtype": current_dtype}
@@ -620,7 +633,50 @@ class ForgeOperationsGGUF(ForgeOperations):
             with main_stream_worker(weight, bias, signal):
                 return torch.nn.functional.linear(x, weight, bias)
 
-    class Embedding(torch.nn.Embedding):
+    class Conv2d(torch.nn.Conv2d, ForgeWeights):
+        def __init__(self, *args, **kwargs):
+            kwargs["device"] = current_device
+            kwargs["dtype"] = current_dtype
+            super().__init__(*args, **kwargs)
+            self.dummy = {"device": current_device, "dtype": current_dtype}
+            self.weight = None
+            self.bias = None
+
+        def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+            if hasattr(self, "dummy"):
+                if (computation_dtype := self.dummy["dtype"]) not in [torch.float16, torch.bfloat16]:
+                    computation_dtype = torch.float16
+
+                if prefix + "weight" in state_dict:
+                    self.weight = state_dict[prefix + "weight"].to(device=self.dummy["device"])
+                    self.weight.computation_dtype = computation_dtype
+                if prefix + "bias" in state_dict:
+                    self.bias = state_dict[prefix + "bias"].to(device=self.dummy["device"])
+                    self.bias.computation_dtype = computation_dtype
+
+                del self.dummy
+            else:
+                if prefix + "weight" in state_dict:
+                    self.weight = state_dict[prefix + "weight"]
+                if prefix + "bias" in state_dict:
+                    self.bias = state_dict[prefix + "bias"]
+
+        def _apply(self, fn, recurse=True):
+            for k, p in self.named_parameters(recurse=False, remove_duplicate=True):
+                setattr(self, k, utils.tensor2parameter(fn(p)))
+            return self
+
+        def forward(self, x):
+            if self.bias is not None and self.bias.dtype != x.dtype:
+                self.bias = utils.tensor2parameter(dequantize_tensor(self.bias).to(x.dtype))
+            if self.weight is not None and self.weight.dtype != x.dtype and getattr(self.weight, "gguf_cls", None) is None:
+                self.weight = utils.tensor2parameter(self.weight.to(x.dtype))
+
+            weight, bias, signal = weights_manual_cast(self, x, weight_fn=dequantize_tensor, skip_bias_dtype=True)
+            with main_stream_worker(weight, bias, signal):
+                return super()._conv_forward(x, weight, bias)
+
+    class Embedding(torch.nn.Embedding, ForgeWeights):
         def __init__(self, *args, **kwargs):
             kwargs["device"] = current_device
             kwargs["dtype"] = current_dtype
@@ -706,7 +762,7 @@ def fp8_linear(self: torch.nn.Linear, input: torch.Tensor):
 
 
 class ForgeOperationsFP8(ForgeOperations):
-    class Linear(ForgeOperations.Linear):
+    class Linear(ForgeOperations.Linear, ForgeWeights):
         def forward(self, x):
             try:
                 if (out := fp8_linear(self, x)) is not None:
@@ -715,6 +771,56 @@ class ForgeOperationsFP8(ForgeOperations):
                 memory_management.logger.error(f"Error during fp8_fast: {e}")
 
             return super().forward(x)
+
+
+# region Tiled
+
+
+class TiledOperations(ForgeOperations):
+    class Conv2d(ForgeOperations.Conv2d):
+        tile_size: int
+
+        def __init__(self, *arg, **kwargs):
+            super().__init__(*arg, **kwargs)
+            self._3x1x1: bool = self.kernel_size == (3, 3) and self.stride == (1, 1) and self.padding == (1, 1)
+            self.tile_size = args.tiled_conv2d
+
+        @torch.inference_mode()
+        def forward(self, x: torch.Tensor):
+            if not self._3x1x1:
+                return super().forward(x)
+
+            B, C, H, W = x.shape
+
+            if H <= self.tile_size and W <= self.tile_size:
+                return super().forward(x)
+
+            orig_forward = super().forward
+            out_channels = self.out_channels if self.out_channels is not None else C
+
+            out = torch.empty((B, out_channels, H, W), device=x.device, dtype=x.dtype, memory_format=torch.contiguous_format)
+            non_blocking = memory_management.device_supports_non_blocking(x.device)
+
+            for i in range(0, H, self.tile_size):
+                i0 = max(i - 1, 0)
+                i1 = min(i + self.tile_size + 1, H)
+                pi = i - i0
+                ph = min(self.tile_size, H - i)
+
+                for j in range(0, W, self.tile_size):
+                    j0 = max(j - 1, 0)
+                    j1 = min(j + self.tile_size + 1, W)
+
+                    tile = x[:, :, i0:i1, j0:j1]
+                    tile_conv = orig_forward(tile)
+
+                    pj = j - j0
+                    pw = min(self.tile_size, W - j)
+
+                    out[:, :, i : i + ph, j : j + pw].copy_(tile_conv[:, :, pi : pi + ph, pj : pj + pw], non_blocking=non_blocking)
+                    del tile_conv
+
+            return out
 
 
 # region Pick OPs
@@ -753,10 +859,13 @@ def using_forge_operations(operations=None, device=None, dtype=None, manual_cast
         _dtype = torch.bfloat16 if memory_management.should_use_bf16(_device) else torch.float32
         fp8_compute = memory_management.supports_fp8_compute(_device)
         nvfp4_compute = memory_management.supports_nvfp4_compute(_device)
+        mxfp8_compute = memory_management.supports_mxfp8_compute(_device)
 
         disabled = set()
         if not nvfp4_compute:
             disabled.add("nvfp4")
+        if not mxfp8_compute:
+            disabled.add("mxfp8")
         if not fp8_compute:
             disabled.add("float8_e4m3fn")
             disabled.add("float8_e5m2")
@@ -770,6 +879,9 @@ def using_forge_operations(operations=None, device=None, dtype=None, manual_cast
         elif bnb_dtype in ["nf4", "fp4"]:
             assert memory_management.bnb_enabled(), 'Install the "bitsandbytes" package with --bnb'
             operations = ForgeOperationsBNB4bits
+        elif bnb_dtype in ["vae"] and args.tiled_conv2d:
+            memory_management.logger.info(f"Using TiledOperations ({args.tiled_conv2d}) for VAE")
+            operations = TiledOperations
         elif dtype is torch.float8_e4m3fn and args.fast_fp8 and memory_management.supports_fp8_compute(memory_management.get_torch_device()):
             operations = ForgeOperationsFP8
         else:

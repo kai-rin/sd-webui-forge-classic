@@ -18,7 +18,7 @@ from modules import (
     shared_items,
     ui_common,
 )
-from modules_forge.presets import PresetArch, use_distill, use_shift
+from modules_forge.presets import PresetArch, is_video, use_distill, use_shift
 
 logger = logging.getLogger("ui_models")
 setup_logger(logger)
@@ -275,16 +275,19 @@ def _load_presets(ui_checkpoint: str, ui_vae: list[str], ui_forge_unet_dtype: st
 
 def _build_d_args(preset: str) -> dict:
     if use_shift(preset):
-        return {"visible": True, "label": "Shift"}
+        return {"visible": getattr(shared.opts, f"{preset}_show_shift", True), "label": "Shift"}
     elif use_distill(preset):
         return {"visible": True, "label": "Distilled CFG Scale"}
     return {"visible": False}
 
 
 def _build_batch_args(preset: str, include_value: bool = False) -> dict:
-    base = {"minimum": 1, "maximum": 241, "step": 16, "label": "Frames"} if preset == "wan" else {"minimum": 1, "maximum": 8, "step": 1, "label": "Batch Size"}
+    if (fps := is_video(preset)) > 1:
+        base = {"minimum": 1, "maximum": fps * 15 + 1, "step": fps, "label": "Frames"}
+    else:
+        base = {"minimum": 1, "maximum": 8, "step": 1, "label": "Batch Size"}
     if include_value:
-        base["value"] = 1
+        base["value"] = getattr(shared.opts, f"{preset}_batch_size", 1)
     return base
 
 

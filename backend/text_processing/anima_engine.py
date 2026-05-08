@@ -1,3 +1,4 @@
+import math
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -78,13 +79,13 @@ class AnimaTextProcessingEngine:
 
     def __call__(self, texts):
         zs = []
-        cache = {}
+        cache: dict[str, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
 
         self.emphasis = emphasis.get_current_option(opts.emphasis)()
 
         for line in texts:
             if line in cache:
-                z = cache[line]
+                z, tok, mul = cache[line]
             else:
                 chunks: list[PromptChunk] = self.tokenize_line(line)
                 assert len(chunks) == 1
@@ -94,17 +95,14 @@ class AnimaTextProcessingEngine:
                     multipliers = chunk.qwen_multipliers
 
                     z: torch.Tensor = self.process_tokens([tokens], [multipliers])[0]
+                    tok = torch.tensor(chunk.t5_tokens, dtype=torch.int)
+                    mul = torch.tensor(chunk.t5_multipliers)
 
-                cache[line] = z
+                cache[line] = (z, tok, mul)
 
-            zs.append(
-                self.anima_preprocess(
-                    z,
-                    torch.tensor(chunk.t5_tokens, dtype=torch.int),
-                    torch.tensor(chunk.t5_multipliers),
-                )
-            )
+            zs.append(self.anima_preprocess(z, tok, mul))
 
+        del cache
         return zs
 
     def anima_preprocess(self, cross_attn: torch.Tensor, t5xxl_ids: torch.Tensor, t5xxl_weights: torch.Tensor) -> torch.Tensor:
@@ -117,8 +115,8 @@ class AnimaTextProcessingEngine:
         if t5xxl_weights is not None:
             cross_attn *= t5xxl_weights.unsqueeze(0).unsqueeze(-1).to(cross_attn)
 
-        if cross_attn.shape[1] < 512:
-            cross_attn = torch.nn.functional.pad(cross_attn, (0, 0, 0, 512 - cross_attn.shape[1]))
+        dim = math.ceil(cross_attn.shape[1] / 512) * 512
+        cross_attn = torch.nn.functional.pad(cross_attn, (0, 0, 0, dim - cross_attn.shape[1]))
 
         return cross_attn
 

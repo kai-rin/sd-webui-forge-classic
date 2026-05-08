@@ -76,7 +76,6 @@ parser.add_argument("--disable-flash", action="store_true", help="disable flash_
 parser.add_argument("--disable-xformers", action="store_true", help="disable xformers")
 
 parser.add_argument("--directml", type=int, nargs="?", metavar="DIRECTML_DEVICE", const=-1, help="Use torch-directml")
-parser.add_argument("--disable-ipex-optimize", action="store_true", help="Disable ipex.optimize default when loading models with Intel's Extension for PyTorch")
 parser.add_argument("--deterministic", action="store_true", help="Use slower deterministic algorithms when possible")
 
 vram_group = parser.add_mutually_exclusive_group()
@@ -94,6 +93,7 @@ parser.add_argument("--force-non-blocking", action="store_true", help="Use non-b
 parser.add_argument("--cuda-malloc", action="store_true", help="improve memory allocation")
 parser.add_argument("--cuda-stream", type=int, nargs="?", metavar="NUM_STREAMS", const=2, help="improve offloading")
 parser.add_argument("--pin-shared-memory", action="store_true", help="improve RAM utilization")
+parser.add_argument("--expandable-segments", action="store_true", help="improve memory allocation ; experimental")
 
 parser.add_argument("--fast-fp8", action="store_true", help="torch._scaled_mm")
 parser.add_argument("--fast-fp16", action="store_true", help="torch.backends.cuda.matmul.allow_fp16_accumulation")
@@ -101,6 +101,8 @@ parser.add_argument("--autotune", action="store_true", help="torch.backends.cudn
 
 parser.add_argument("--mmap-torch-files", action="store_true", help="Use mmap when loading ckpt/pt files")
 parser.add_argument("--disable-mmap", action="store_true", help="Don't use mmap when loading safetensors")
+
+parser.add_argument("--tiled-conv2d", type=int, default=0, metavar="TILE_SIZE", choices=[0, 64, 128, 256, 512], help="reduce VAE memory usage ; increase processing time")
 
 
 class SageAttentionFuncs(enum.Enum):

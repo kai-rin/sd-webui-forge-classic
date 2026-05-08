@@ -15,7 +15,6 @@ class Lumina2(ForgeDiffusionEngine):
 
     def __init__(self, estimated_config, huggingface_components):
         super().__init__(estimated_config, huggingface_components)
-        self.is_inpaint = False
 
         clip = CLIP(model_dict={"gemma2": huggingface_components["text_encoder"]}, tokenizer_dict={"gemma2": huggingface_components["tokenizer"]})
 
@@ -39,9 +38,6 @@ class Lumina2(ForgeDiffusionEngine):
     @torch.inference_mode()
     def get_learned_conditioning(self, prompt: list[str]):
         memory_management.load_model_gpu(self.forge_objects.clip.patcher)
-        shift = getattr(prompt, "distilled_cfg_scale", 6.0)
-        self.forge_objects.unet.model.predictor.set_parameters(shift=shift)
-        memory_management.logger.debug(f"Shift: {shift}")
         return self.text_processing_engine_gemma(prompt)
 
     @torch.inference_mode()
