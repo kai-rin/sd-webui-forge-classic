@@ -447,9 +447,6 @@ def create_ui():
 
             steps = scripts.scripts_txt2img.script("Sampler").steps
 
-            no_config(width, height, cfg_scale, distilled_cfg_scale, batch_size)
-            no_config(hr_second_pass_steps, hr_cfg, hr_distilled_cfg)
-
             toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter])
             toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
             toprow.token_button.click(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter])
@@ -796,8 +793,6 @@ def create_ui():
             )
 
             steps = scripts.scripts_img2img.script("Sampler").steps
-
-            no_config(width, height, cfg_scale, distilled_cfg_scale, batch_size)
 
             toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter])
             toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
