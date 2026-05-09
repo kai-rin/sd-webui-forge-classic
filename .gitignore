@@ -32,3 +32,4 @@ __pycache__
 notification.mp3
 /.playwright-mcp/
 /.claude/
+/.claude.local.md
