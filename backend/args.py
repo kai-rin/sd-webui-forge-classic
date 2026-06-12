@@ -103,6 +103,7 @@ parser.add_argument("--mmap-torch-files", action="store_true", help="Use mmap wh
 parser.add_argument("--disable-mmap", action="store_true", help="Don't use mmap when loading safetensors")
 
 parser.add_argument("--tiled-conv2d", type=int, default=0, metavar="TILE_SIZE", choices=[0, 64, 128, 256, 512], help="reduce VAE memory usage ; increase processing time")
+parser.add_argument("--enable-triton-backend", action="store_true", help="Enable the use of Triton backend in comfy-kitchen")
 
 
 class SageAttentionFuncs(enum.Enum):
@@ -110,30 +111,12 @@ class SageAttentionFuncs(enum.Enum):
     fp16_triton = "fp16_triton"
     fp16_cuda = "fp16_cuda"
     fp8_cuda = "fp8_cuda"
+    fp8_cuda_pp = "fp8_cuda++"
+    sageattn3 = "sageattn3"
 
 
-class Sage_quantization_backend(enum.Enum):
-    cuda = "cuda"
-    triton = "triton"
-
-
-class Sage_qk_quant_gran(enum.Enum):
-    per_warp = "per_warp"
-    per_thread = "per_thread"
-
-
-class Sage_pv_accum_dtype(enum.Enum):
-    fp16 = "fp16"
-    fp32 = "fp32"
-    fp16fp32 = "fp16+fp32"
-    fp32fp32 = "fp32+fp32"
-
-
-sage2 = parser.add_argument_group(description="SageAttention 2")
-sage2.add_argument("--sage2-function", type=SageAttentionFuncs, default=SageAttentionFuncs.auto, action=EnumAction)
-sage2.add_argument("--sage-quantization-backend", type=Sage_quantization_backend, default=Sage_quantization_backend.triton, action=EnumAction)
-sage2.add_argument("--sage-quant-gran", type=Sage_qk_quant_gran, default=Sage_qk_quant_gran.per_thread, action=EnumAction)
-sage2.add_argument("--sage-accum-dtype", type=Sage_pv_accum_dtype, default=Sage_pv_accum_dtype.fp32, action=EnumAction)
+sage = parser.add_argument_group(description="SageAttention")
+sage.add_argument("--sage-function", type=SageAttentionFuncs, default=SageAttentionFuncs.auto, action=EnumAction)
 
 
 args, _ = parser.parse_known_args()
@@ -187,3 +170,5 @@ class dynamic_args(metaclass=_DynamicArgsMeta):
     """Appending Reference Latent(s) (by. ImageStitch)"""
     ops: str = None
     """Operations for the Diffusion Model"""
+    last_extra_generation_params: dict[str, str] = {}
+    """Infotext captured during `get_learned_conditioning`"""

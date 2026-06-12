@@ -22,7 +22,7 @@ The name "Forge" is inspired by "Minecraft Forge". This project aims to become t
 
 <br>
 
-## Features [May.]
+## Features [Jun.]
 > Most base features of the original [Automatic1111 Webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui) should still function
 
 #### New Features
@@ -89,19 +89,28 @@ The name "Forge" is inspired by "Minecraft Forge". This project aims to become t
 <br>
 
 - [X] Rewrite Preset System
-    - now remembers the checkpoint/module selection and parameters for each preset
+    - now save the checkpoint/module selection and parameters per each Preset
+
+> [!Note]
+> This overrides the `UI Defaults` for the controlled parameters
+
+<br>
+
+- [X] Enforce Resolution Steps
+    - dimensions must be multiples of `64` by default
+    - adjust in **Settings/System**
 - [X] Support [uv](https://github.com/astral-sh/uv) package manager
     - drastically speed up installation
-    - requires **manually** installing [uv](https://github.com/astral-sh/uv/releases)
+    - require **manually** installing [uv](https://github.com/astral-sh/uv/releases)
     - see [Commandline](#by-neo)
 - [X] Support [SageAttention](https://github.com/thu-ml/SageAttention), [FlashAttention](https://github.com/Dao-AILab/flash-attention), `fp16_accumulation`, `torch._scaled_mm`
     - see [Commandline](#by-neo)
 - [X] Implement Triton Kernel for `matmul` in `torch.int8`
-    - speed up `bf16` models
+    - speed up inference after quantization
     - enable by selecting `int8` in the `Diffusion in Low Bits`
 - [X] Implement [Radial Attention](https://github.com/mit-han-lab/radial-attention)
     - speed up `Wan 2.2`
-    - requires **manually** installing [SpargeAttn](https://github.com/thu-ml/SpargeAttn)
+    - require **manually** installing [SpargeAttn](https://github.com/thu-ml/SpargeAttn)
 - [X] Implement fast `state_dict` switching for Refiner
     - enable in **Settings/Refiner**
 - [X] Implement RescaleCFG
@@ -122,7 +131,7 @@ The name "Forge" is inspired by "Minecraft Forge". This project aims to become t
     - see [Commandline](#by-neo)
 - [X] Implement full precision calculation for `Mask blur` blending
     - enable in **Settings/img2img**
-- [X] Support TAESD live preview for all models
+- [X] Support TAESD / TAEHV live preview for all models
 - [X] Support loading upscalers in `half` precision
     - speed up; reduce quality
     - enable in **Settings/Upscaling**
@@ -200,8 +209,13 @@ The name "Forge" is inspired by "Minecraft Forge". This project aims to become t
     - update descriptions
 - [X] Check for Extension updates in parallel
 - [X] Move `embeddings` folder into `models` folder
+- [X] Infotext Rewrite
+    - allow switching Models and Modules
+    - save `emphasis` properly
+    - correct default values
 - [X] ControlNet Rewrite
     - change Units to `gr.Tab`
+    - improve `masks` & `buttons`
     - remove multi-inputs, as they are "[misleading](https://github.com/lllyasviel/stable-diffusion-webui-forge/discussions/932)"
 - [X] Disable Refiner by default
     - enable again in **Settings/Refiner**
@@ -250,18 +264,25 @@ The name "Forge" is inspired by "Minecraft Forge". This project aims to become t
 <br>
 
 - `--uv`: Replace the `python -m pip` calls with `uv pip` to massively speed up package installation
-    - requires **uv** to be installed first *(see [Installation](#installation))*
+    - requires **uv** to be installed first *(see [Extra Installations](https://github.com/Haoming02/sd-webui-forge-classic/wiki/Extra-Installations))*
 - `--uv-symlink`: Same as above; but additionally pass `--link-mode symlink` to the commands
     - significantly reduces installation size (`~7 GB` to `~100 MB`)
+- `--uv-local-cache`: Same as above; but additionally set `UV_CACHE_DIR` to a `.uv-cache` folder within WebUI directory
+    - speed up installation on non-default drive *(**i.e.** not `C:` on Windows)*
+    - allow clean uninstallation by simply deleting the WebUI directory
 
 > [!Important]
-> Using `symlink` means it will directly access the packages from the cache folders; refrain from clearing the cache if using this option
+> `symlink` means it will directly access the packages from the cache folder instead of copying the packages over ; refrain from clearing the cache when using this option
+
+<br>
 
 - `--model-ref`: Points to a central `models` folder that contains all your models
     - said folder should contain subfolders like `Stable-diffusion`, `Lora`, `VAE`, `ESRGAN`, etc.
 
 > [!Important]
 > This simply **replaces** the `models` folder rather than adding on top of it
+
+<br>
 
 - `--forge-ref-a1111-home`: Point to an Automatic1111 installation to load its `models` folders
     - **i.e.** `Stable-diffusion`, `text_encoder`, etc.
@@ -337,7 +358,8 @@ The name "Forge" is inspired by "Minecraft Forge". This project aims to become t
 <br>
 
 > [!Tip]
-> For **Linux** and **macOS**, refer to [Wiki](https://github.com/Haoming02/sd-webui-forge-classic/wiki/Unix)
+> - For **Linux** and **macOS**, refer to [Wiki](https://github.com/Haoming02/sd-webui-forge-classic/wiki/Unix)
+> - For **Docker** (`Nvidia`), refer to [Docker](docker/)
 
 <br>
 
@@ -407,4 +429,12 @@ Buy me a <a href="https://ko-fi.com/Haoming">Coffee</a> ☕~
 <sub><i>
 <a href="https://paypal.me/hmgamingdonation">PayPal</a> me 💳~
 </i></sub>
+</p>
+
+<br>
+
+<p align="center">
+	<a href="https://www.star-history.com/?repos=Haoming02%2Fsd-webui-forge-classic&type=date&legend=top-left">
+		<img src="https://api.star-history.com/chart?repos=Haoming02/sd-webui-forge-classic&type=date&legend=top-left">
+	</a>
 </p>
