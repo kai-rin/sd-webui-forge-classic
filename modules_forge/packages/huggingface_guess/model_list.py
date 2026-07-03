@@ -1,4 +1,4 @@
-# reference: https://github.com/Comfy-Org/ComfyUI/blob/master/comfy/supported_models.py
+# reference: https://github.com/Comfy-Org/ComfyUI/blob/v0.26.1/comfy/supported_models.py
 
 from enum import Enum
 
@@ -483,6 +483,9 @@ class Anima(BASE):
 
     supported_inference_dtypes = [torch.bfloat16, torch.float16, torch.float32]
 
+    vae_key_prefix = ["vae."]
+    text_encoder_key_prefix = ["text_encoders."]
+
     unet_target = "transformer"
 
     def clip_target(self, state_dict={}):
@@ -564,6 +567,33 @@ class QwenImage(BASE):
             return {"qwen25_7b": "text_encoder"}
 
 
+class Krea2(BASE):
+    huggingface_repo = "krea/Krea-2-Raw"
+
+    unet_config = {
+        "image_model": "krea2",
+    }
+
+    sampling_settings = {
+        "multiplier": 1.0,
+        "shift": 1.15,
+    }
+
+    memory_usage_factor = 2.2
+
+    latent_format = latent.Wan21
+
+    supported_inference_dtypes = [torch.bfloat16, torch.float16, torch.float32]
+
+    vae_key_prefix = ["vae."]
+    text_encoder_key_prefix = ["text_encoders."]
+
+    unet_target = "transformer"
+
+    def clip_target(self, state_dict={}):
+        return {"qwen3vl_4b.transformer": "text_encoder"}
+
+
 class ErnieImage(BASE):
     huggingface_repo = "baidu/ERNIE-Image"
 
@@ -592,6 +622,39 @@ class ErnieImage(BASE):
         return {"ministral3_3b.transformer": "text_encoder"}
 
 
+class PiD(BASE):
+    huggingface_repo = "nvidia/PiD"
+
+    unet_config = {
+        "image_model": "pid",
+    }
+
+    sampling_settings = {
+        "shift": 1.5,
+    }
+
+    memory_usage_factor = 0.04
+
+    unet_extra_config = {}
+    latent_format = latent.RGB
+
+    supported_inference_dtypes = [torch.bfloat16, torch.float32]
+
+    vae_key_prefix = ["vae."]
+    text_encoder_key_prefix = ["text_encoders."]
+
+    unet_target = "transformer"
+
+    def clip_target(self, state_dict: dict):
+        pref = self.text_encoder_key_prefix[0]
+        if "{}gemma2_2b.transformer.model.embed_tokens.weight".format(pref) in state_dict:
+            state_dict.pop("{}gemma2_2b.logit_scale".format(pref), None)
+            state_dict.pop("{}spiece_model".format(pref), None)
+            return {"gemma2_2b.transformer": "text_encoder"}
+        else:
+            return {"gemma2_2b": "text_encoder"}
+
+
 models = [
     SD15,
     SDXL,
@@ -608,5 +671,7 @@ models = [
     WAN21_T2V,
     WAN21_I2V,
     QwenImage,
+    Krea2,
     ErnieImage,
+    PiD,
 ]
