@@ -31,6 +31,8 @@ python launch.py --help
 
 The startup chain: `webui-user.bat` → `webui.bat` (venv setup) → `python launch.py` → `modules/launch_utils.py:prepare_environment()` (pip installs) → `modules/launch_utils.py:start()` → `webui.py` (Gradio/FastAPI server).
 
+**Launching from Git Bash**: `webui-user.bat` fails there — its internal `call webui.bat` breaks under `NoDefaultCurrentDirectoryInExePath`. Instead run the venv python directly, copying the args from `COMMANDLINE_ARGS` in `webui-user.bat`: `venv/Scripts/python.exe launch.py <args> --skip-install` (as a background task; wait for "Running on local URL" in the output, ~30s).
+
 **No test suite exists.** No pytest, no test runner, no CI tests.
 
 ## Linting / Formatting
