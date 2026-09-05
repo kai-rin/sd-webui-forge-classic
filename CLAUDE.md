@@ -33,7 +33,11 @@ The startup chain: `webui-user.bat` → `webui.bat` (venv setup) → `python lau
 
 **Launching from Git Bash**: `webui-user.bat` fails there — its internal `call webui.bat` breaks under `NoDefaultCurrentDirectoryInExePath`. Instead run the venv python directly, copying the args from `COMMANDLINE_ARGS` in `webui-user.bat`: `venv/Scripts/python.exe launch.py <args> --skip-install` (as a background task; wait for "Running on local URL" in the output, ~30s).
 
+**Verification instance (port 5093)**: the everyday instance holds 5092, so launch with `--port 5093` and redirect output to `.claude/tmp/<name>.log`. Wait with `until grep -q "Running on local URL" <log>; do sleep 2; done`. Stop with `taskkill.exe //PID $(netstat -ano | grep -E ":5093 .*LISTENING" | awk '{print $NF}') //F //T` (the background task then reports exit code 1 — expected).
+
 **No test suite exists.** No pytest, no test runner, no CI tests.
+
+Extension JS logic can still be unit-checked without launching: stub the globals (`onUiLoaded`, `updateInput`, config classes) and extract the class with `new Function(stubs + src + "\nreturn <Class>;")()`. Write the test as a `.mjs` in the scratchpad and run `node <path>` — a Bash heredoc corrupts `\\(` escapes in string literals.
 
 ## Linting / Formatting
 
@@ -141,4 +145,7 @@ Defined in `backend/loader.py`: StableDiffusion (SD1.5), StableDiffusionXL, Stab
 - **Temporary files** (screenshots, debug output, etc.) go in `.claude/tmp/` (gitignored), not the project root. Gotcha: Playwright MCP `browser_take_screenshot` writes to CWD (repo root) unless you pass an explicit `.claude/tmp/...` filename; its `.playwright-mcp/` output dir also accumulates at root (both gitignored)
 - **JS file caching**: Gradio serves `javascript/*.js` with `?{mtime}` query — editing a JS file requires server restart for the new version to be served. Simply reloading the page is insufficient if the server process is the same
 - **`onUiLoaded` fires before hydration**: it triggers as soon as `#txt2img_prompt` exists in DOM (script.js MutationObserver) — Gradio value hydration and `root_block.load` round-trips (`on_preset_load` rewrites slider min/max/step, `refresh_model_list`, etc.) land later at non-deterministic times. JS that writes component values at page load must verify + re-apply in a polling loop; fixed setTimeout delays are never safe
+- **Playwright screenshot path**: pass an absolute path with a **lowercase drive letter** (`d:/AIforks/.../.claude/tmp/x.png`); `D:/...` is rejected as "outside allowed roots"
+- **Console-error noise on page load**: `physton_prompt/*` 404s and `agent-scheduler.iife.js` "Spread syntax requires ...iterable" TypeErrors come from other extensions — ignore them when checking for 0 errors. Also, dispatching a synthetic `keydown` on `document` throws `target.matches is not a function` in edit-attention.js / edit-order.js; dispatch on the textarea instead
+- **Prompt textarea rewrites after `updateInput`**: another extension (tagcomplete-family) appends `, ` ~500ms later. When asserting formatted values, read the textarea immediately after the click, not after a wait
 - **Load-time race testing**: use Playwright `browser_run_code_unsafe` + `page.addInitScript` to inject repro code BEFORE page load (`browser_navigate` → `browser_evaluate` leaves a multi-second gap). Note: Playwright click/fill produce trusted events (isTrusted=true); `page.evaluate` dispatches are synthetic — pick per test scenario
