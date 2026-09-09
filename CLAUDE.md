@@ -33,11 +33,13 @@ The startup chain: `webui-user.bat` → `webui.bat` (venv setup) → `python lau
 
 **Launching from Git Bash**: `webui-user.bat` fails there — its internal `call webui.bat` breaks under `NoDefaultCurrentDirectoryInExePath`. Instead run the venv python directly, copying the args from `COMMANDLINE_ARGS` in `webui-user.bat`: `venv/Scripts/python.exe launch.py <args> --skip-install` (as a background task; wait for "Running on local URL" in the output, ~30s).
 
+**`[Error] uv is not installed...` on startup**: `modules_forge/uv_hook.py:_pre_check` raises this only when `uv.exe` cannot be resolved on the *launching process's* PATH — not a code bug. Check the launcher's env first (`psutil.Process(pid).environ()` from the venv python reads explorer's PATH). If the user PATH is missing entirely, the cause is the system+user PATH exceeding ~4095 chars at logon; see memory `uv-not-installed-explorer-env.md`. Do not paper over the check with a `set PATH=` in `webui-user.bat` — it hides a machine-wide breakage.
+
 **Verification instance (port 5093)**: the everyday instance holds 5092, so launch with `--port 5093` and redirect output to `.claude/tmp/<name>.log`. Wait with `until grep -q "Running on local URL" <log>; do sleep 2; done`. Stop with `taskkill.exe //PID $(netstat -ano | grep -E ":5093 .*LISTENING" | awk '{print $NF}') //F //T` (the background task then reports exit code 1 — expected).
 
 **No test suite exists.** No pytest, no test runner, no CI tests.
 
-Extension JS logic can still be unit-checked without launching: stub the globals (`onUiLoaded`, `updateInput`, config classes) and extract the class with `new Function(stubs + src + "\nreturn <Class>;")()`. Write the test as a `.mjs` in the scratchpad and run `node <path>` — a Bash heredoc corrupts `\\(` escapes in string literals.
+Extension JS logic can still be unit-checked without launching: stub the globals (`onUiLoaded`, `updateInput`, config classes) and extract the class with `new Function(stubs + src + "\nreturn <Class>;")()`. Write the test as a `.mjs` in the scratchpad and run `node <path>` — a Bash heredoc corrupts `\\(` escapes in string literals. The same applies to Python: `python - <<'EOF'` mangles `\\` (Windows paths, `\.` in strings) — write a `.py` to the scratchpad instead, or build paths with `os.path.join` / `chr(92)`.
 
 ## Linting / Formatting
 
