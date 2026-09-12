@@ -34,3 +34,7 @@ notification.mp3
 /.playwright-mcp/
 /.claude/
 /.claude.local.md
+# Stray Playwright/verify screenshots left at repo root (should live in .claude/tmp/)
+/verify-*.png
+/page-*.png
+/page-*.jpeg
