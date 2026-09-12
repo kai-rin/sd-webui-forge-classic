@@ -116,6 +116,11 @@ The main thread runs `main_thread.loop()` (blocking deque consumer). All GPU-tou
 - Custom branches (e.g., `custom-main`) track `origin`, sync via: `git fetch upstream && git checkout main && git pull upstream main && git checkout custom-main && git rebase main`
 - Run `/extension-compat-check extensions/<name>` before first launch with a new extension
 
+### Upstream Sync (this repo)
+- `neo` tracks `upstream/neo` (Haoming02), `neo-custom` tracks `origin/neo-custom` (fork). Sync by **merge**, never rebase: `git checkout neo && git merge --ff-only upstream/neo && git checkout neo-custom && git merge neo`
+- Dry-run conflicts first: `git merge-tree --write-tree neo-custom upstream/neo` (exit 0 + tree hash only = clean)
+- **CRLF gotcha**: no `.gitattributes`; upstream commits CRLF. A local commit that normalized a file to LF (e.g. `modules/ui.py`) makes the merge show a whole-file conflict. Check the real diff with `git diff -w` and merge with `git merge -Xignore-space-at-eol`
+
 ### Supported Model Architectures
 
 Defined in `backend/loader.py`: StableDiffusion (SD1.5), StableDiffusionXL, StableDiffusionXLRefiner, Flux, Flux2 (Klein), Wan, QwenImage, Lumina2, ZImage, Chroma, Anima. Detection uses `huggingface_guess` (inspects state dict keys).
