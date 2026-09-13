@@ -59,9 +59,10 @@ ruff check --fix .  # auto-fix
 ## Pinned Versions
 
 - Python: **3.13.x** (checked on startup, warns on mismatch)
-- PyTorch: **2.10.0+cu130** (CUDA 13.0)
+- PyTorch: **2.10.0+cu130** installed (upstream pins 2.13.0 since 2.29, but `prepare_environment()` only checks presence — torch/xformers/sageattention/gradio are never reinstalled unless `--reinstall-*` is passed; only `requirements.txt` is version-gated via `requirements_met()`)
 - Gradio: **4.40.0**
-- Key optional packages: xformers 0.0.34, sageattention 2.2.0, flash_attn 2.8.3, nunchaku 1.2.1, bitsandbytes 0.49.1
+- Key optional packages: xformers 0.0.34, sageattention 2.2.0, flash_attn 2.8.3, nunchaku 1.2.1 (deprecated upstream); bitsandbytes support removed in 2.29
+- The venv has **no pip** (created by uv): use `uv pip install --python venv/Scripts/python.exe ...` / `uv pip freeze --python ...`. Back up with `uv pip freeze` to `.claude/tmp/` before bulk updates
 
 ## Architecture
 
@@ -120,6 +121,7 @@ The main thread runs `main_thread.loop()` (blocking deque consumer). All GPU-tou
 - `neo` tracks `upstream/neo` (Haoming02), `neo-custom` tracks `origin/neo-custom` (fork). Sync by **merge**, never rebase: `git checkout neo && git merge --ff-only upstream/neo && git checkout neo-custom && git merge neo`
 - Dry-run conflicts first: `git merge-tree --write-tree neo-custom upstream/neo` (exit 0 + tree hash only = clean)
 - **CRLF gotcha**: no `.gitattributes`; upstream commits CRLF. A local commit that normalized a file to LF (e.g. `modules/ui.py`) makes the merge show a whole-file conflict. Check the real diff with `git diff -w` and merge with `git merge -Xignore-space-at-eol`
+- After merging, check `requirements.txt` for bumps first: `uv pip install --dry-run --python venv/Scripts/python.exe -r requirements.txt` shows exactly what the launcher would install and whether torch gets pulled in
 
 ### Supported Model Architectures
 
@@ -154,5 +156,7 @@ Defined in `backend/loader.py`: StableDiffusion (SD1.5), StableDiffusionXL, Stab
 - **`onUiLoaded` fires before hydration**: it triggers as soon as `#txt2img_prompt` exists in DOM (script.js MutationObserver) — Gradio value hydration and `root_block.load` round-trips (`on_preset_load` rewrites slider min/max/step, `refresh_model_list`, etc.) land later at non-deterministic times. JS that writes component values at page load must verify + re-apply in a polling loop; fixed setTimeout delays are never safe
 - **Playwright screenshot path**: pass an absolute path with a **lowercase drive letter** (`d:/AIforks/.../.claude/tmp/x.png`); `D:/...` is rejected as "outside allowed roots"
 - **Console-error noise on page load**: `physton_prompt/*` 404s, `agent-scheduler.iife.js` "Spread syntax requires ...iterable" TypeErrors, and `extraNetworks.js registerPrompt` "Cannot read properties of null (reading 'addEventListener')" (sd-d2-ui-customizer wraps `#*_neg_prompt` in `<details>`, breaking the `> label > textarea` selector; timing-dependent) come from other extensions — ignore them when checking for 0 errors. Also, dispatching a synthetic `keydown` on `document` throws `target.matches is not a function` in edit-attention.js / edit-order.js; dispatch on the textarea instead
+- **Server-log noise**: reloading a tab while its generation is running produces `KeyError: '<session_hash>'` from `gradio/queueing.py:send_message` — the `/internal/close-session` beacon already dropped the session. Harmless, generation continues
+- **Generation completion check without the UI**: poll `/internal/debug-state` until `current_task` is null and the task id appears in `finished_tasks`; `#txt2img_enqueue` click + `extensions/sd-webui-agent-scheduler/task_scheduler.sqlite3` (`task.status`) covers agent-scheduler
 - **Prompt textarea rewrites after `updateInput`**: another extension (tagcomplete-family) appends `, ` ~500ms later. When asserting formatted values, read the textarea immediately after the click, not after a wait
 - **Load-time race testing**: use Playwright `browser_run_code_unsafe` + `page.addInitScript` to inject repro code BEFORE page load (`browser_navigate` → `browser_evaluate` leaves a multi-second gap). Note: Playwright click/fill produce trusted events (isTrusted=true); `page.evaluate` dispatches are synthetic — pick per test scenario
