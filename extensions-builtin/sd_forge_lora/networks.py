@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 from backend.args import dynamic_args
 from backend.logging import setup_logger
 from backend.patcher.lora import load_lora, model_lora_keys_clip, model_lora_keys_unet
+from backend.state_dict import state_dict_prefix_replace
 from backend.utils import load_torch_file
 from modules import errors, scripts, sd_models, shared
 
@@ -24,7 +25,7 @@ setup_logger(logger)
 load_lora_state_dict = functools.partial(load_torch_file, safe_load=True)
 
 
-def process_anima(lora: dict[str, torch.Tensor]):
+def process_anima(lora: dict[str, torch.Tensor], blocks: int) -> bool:
     # LLMAdapter was moved from transformer to text_encoder
 
     keys = list(lora.keys())
@@ -34,19 +35,71 @@ def process_anima(lora: dict[str, torch.Tensor]):
         elif k.startswith("lora_unet_llm_adapter"):
             lora[k.replace("lora_unet_llm_adapter", "lora_te_llm_adapter")] = lora.pop(k)
 
+    parsed: dict[str, tuple[int, str]] = {}
+    prefix, sep = ("lora_unet_blocks_", "_") if any(k.startswith("lora_unet_blocks_") for k in keys) else ("diffusion_model.blocks.", ".")
+
+    for k in keys:
+        if not k.startswith(prefix):
+            continue
+        num, s, tail = k[len(prefix) :].partition(sep)
+        if s and num.isdigit():
+            parsed[k] = (int(num), tail)
+
+    _blocks: int = (max(n for n, _ in parsed.values()) + 1) if parsed else 0
+    lora_blocks: int = next(size for size in (28, 40, 52) if _blocks <= size)
+
+    if lora_blocks == blocks:
+        return True
+
+    if lora_blocks > blocks:
+        logger.error(f"Cannot map larger Anima LoRA to smaller Anima Model ({lora_blocks} > {blocks})")
+        return False
+
+    temp = lora.copy()
+
+    MAPPING_2_TO_29 = [0, 1, 1, 2, 3, 3, 4, 5, 5, 6, 7, 7, 8, 9, 9, 10, 11, 11, 12, 13, 14, 14, 15, 16, 16, 17, 18, 18, 19, 20, 20, 21, 22, 22, 23, 24, 24, 25, 26, 27]
+
+    MAPPING_2_TO_38 = [0, 1, 1, 1, 2, 3, 3, 3, 4, 5, 5, 5, 6, 7, 7, 7, 8, 9, 9, 9, 10, 11, 11, 11, 12, 13, 14, 14, 14, 15, 16, 16, 16, 17, 18, 18, 18, 19, 20, 20, 20, 21, 22, 22, 22, 23, 24, 24, 24, 25, 26, 27]
+
+    MAPPING_29_TO_38 = [0, 1, 2, 2, 3, 4, 5, 5, 6, 7, 8, 8, 9, 10, 11, 11, 12, 13, 14, 14, 15, 16, 17, 17, 18, 19, 20, 20, 21, 22, 23, 23, 24, 25, 26, 26, 27, 28, 29, 29, 30, 31, 32, 32, 33, 34, 35, 35, 36, 37, 38, 39]
+
+    if lora_blocks == 28 and blocks == 40:
+        mapping = MAPPING_2_TO_29
+    elif lora_blocks == 28 and blocks == 52:
+        mapping = MAPPING_2_TO_38
+    elif lora_blocks == 40 and blocks == 52:
+        mapping = MAPPING_29_TO_38
+    else:
+        logger.error(f"Failed to recognize LoRA ({lora_blocks}) to Model ({blocks}) Mapping")
+        return False
+
+    logger.warning(f"Re-Mapping Anima LoRA ({lora_blocks} to {blocks})")
+
+    reverse: dict[int, list[int]] = {}
+
+    for target, source in enumerate(mapping):
+        reverse.setdefault(source, []).append(target)
+
+    for k, (source, tail) in parsed.items():
+        for target in reverse.get(source, []):
+            lora[f"{prefix}{target}{sep}{tail}"] = temp[k].clone()
+
+    del temp
+    return True
+
 
 def load_lora_for_models(model: "UnetPatcher", clip: "CLIP", lora: dict[str, torch.Tensor], strength_model: float, strength_clip: float, filename: str = "default", online_mode: bool = False):
     if dynamic_args.nunchaku:
         model.model.diffusion_model.loras.append((filename, strength_model))
         return model, clip
+    if dynamic_args.anima:
+        if not process_anima(lora, len(model.model.diffusion_model.blocks)):
+            return model, clip
 
     model_flag: str = type(model.model).__name__ if model is not None else "default"
 
     unet_keys = model_lora_keys_unet(model.model) if model is not None else {}
     clip_keys = model_lora_keys_clip(clip.cond_stage_model) if clip is not None else {}
-
-    if model.model.diffusion_model.__class__.__name__ == "Anima":
-        process_anima(lora)
 
     lora_unmatch = lora
     lora_unet, lora_unmatch = load_lora(lora_unmatch, unet_keys)
@@ -124,9 +177,6 @@ def load_networks(names: list[str], te_multipliers: list[float] = None, unet_mul
 
     online_mode = dynamic_args.online_lora or False
 
-    if dynamic_args.ops.startswith("Mixed") or dynamic_args.ops.endswith("FP8"):
-        online_mode = False
-
     compiled_lora_targets = []
     for n, u, t in zip(networks_on_disk, unet_multipliers, te_multipliers):
         if n is None:
@@ -146,6 +196,8 @@ def load_networks(names: list[str], te_multipliers: list[float] = None, unet_mul
 
     for filename, strength_model, strength_clip, online_mode in compiled_lora_targets:
         lora_sd = load_lora_state_dict(filename)
+        if any(key.startswith("lora_unet__") for key in lora_sd):
+            lora_sd = state_dict_prefix_replace(lora_sd, {"lora_unet__": "lora_unet_"})
         current_sd.forge_objects.unet, current_sd.forge_objects.clip = load_lora_for_models(current_sd.forge_objects.unet, current_sd.forge_objects.clip, lora_sd, strength_model, strength_clip, filename=filename, online_mode=online_mode)
 
     current_sd.forge_objects_after_applying_lora = current_sd.forge_objects.shallow_copy()

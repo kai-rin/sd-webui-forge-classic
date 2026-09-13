@@ -102,13 +102,14 @@ options_templates.update(
     options_section(
         ("saving-paths", "Paths for Saving", "saving"),
         {
-            "outdir_samples": OptionInfo("", "Output Directory", component_args=hide_dirs).info("if empty, default to the <b>four</b> folders below"),
+            "outdir_samples": OptionInfo("", "Output Directory", component_args=hide_dirs).info("override the following <b>five</b> settings below"),
             "outdir_txt2img_samples": OptionInfo(util.truncate_path(os.path.join(default_output_dir, "txt2img-images")), "Output Directory for txt2img Images", component_args=hide_dirs),
+            "outdir_hires_samples": OptionInfo("", "Output Directory for Hires. fix Images", component_args=hide_dirs).info("if empty, save in the txt2img folder above"),
             "outdir_img2img_samples": OptionInfo(util.truncate_path(os.path.join(default_output_dir, "img2img-images")), "Output Directory for img2img Images", component_args=hide_dirs),
             "outdir_extras_samples": OptionInfo(util.truncate_path(os.path.join(default_output_dir, "extras-images")), "Output Directory for Extras Images", component_args=hide_dirs),
             "outdir_videos": OptionInfo(util.truncate_path(os.path.join(default_output_dir, "videos")), "Output Directory for Videos", component_args=hide_dirs),
             "div00": OptionDiv(),
-            "outdir_grids": OptionInfo("", "Output Directory for Grids", component_args=hide_dirs).info("if empty, default to the <b>two</b> folders below"),
+            "outdir_grids": OptionInfo("", "Output Directory for Grids", component_args=hide_dirs).info("override the following <b>two</b> settings below"),
             "outdir_txt2img_grids": OptionInfo(util.truncate_path(os.path.join(default_output_dir, "txt2img-grids")), "Output Directory for txt2img Grids", component_args=hide_dirs),
             "outdir_img2img_grids": OptionInfo(util.truncate_path(os.path.join(default_output_dir, "img2img-grids")), "Output Directory for img2img Grids", component_args=hide_dirs),
             "div01": OptionDiv(),
@@ -176,6 +177,7 @@ options_templates.update(
             "dump_stacks_on_signal": OptionInfo(False, "Print the stack trace before terminating the webui via Ctrl + C"),
             "confirm_leave": OptionInfo(False, "Show a browser confirmation before leaving the page"),
             "no_spellcheck": OptionInfo(False, "Disable auto-correct / spellcheck for prompt fields").needs_reload_ui(),
+            "keep_alive": OptionInfo(False, "Keep generating even when the WebUI browser tab is not in focus").info('for "Generate forever"').needs_reload_ui(),
             "undo_redo": OptionInfo(False, "Enable undo / redo history for prompt fields").needs_reload_ui(),
         },
     )
@@ -250,7 +252,10 @@ options_templates.update(
             ),
             "divmisc": OptionDiv(),
             "qwen_vae_resize": OptionInfo(False, "[Qwen-Image-Edit] Resize input image to 1 megapixel for ref_latent"),
-            "klein_no_reference": OptionInfo(False, "[Klein] Disable Reference").info("disable Edit ; enable img2img").info("pin to <b>Quicksettings</b> is recommended if changed often"),
+            "klein_do_reference": OptionInfo(True, "[Klein] Enable Reference").info("enable Edit ; disable img2img").info("pin to <b>Quicksettings</b> is recommended if changed often"),
+            "anima_do_reference": OptionInfo(False, "[Anima] Enable Reference").info("enable Edit ; disable img2img").info("pin to <b>Quicksettings</b> is recommended if changed often").info("requires specfic Edit LoRA"),
+            "krea2_do_reference": OptionInfo(False, "[Krea2] Enable Reference").info("enable Edit ; disable img2img").info("pin to <b>Quicksettings</b> is recommended if changed often").info("requires specfic Edit LoRA"),
+            "reference_explanation": OptionHTML("<b>Note:</b> Remember to change the setting before txt2img to clear the references"),
         },
     )
 )
@@ -367,19 +372,9 @@ options_templates.update(
     options_section(
         ("refiner", "Refiner", "sd"),
         {
-            "show_refiner": OptionInfo(False, "Display the Refiner Accordion").info("Refiner swaps the model in the middle of generation; useful for Wan 2.2 <b>High Noise</b> to <b>Low Noise</b> switching").needs_reload_ui(),
-            "refiner_fast_sd": OptionInfo(False, 'Reload "state_dict" Only').info("EXPERIMENTAL"),
+            "show_refiner": OptionInfo(True, "Display the Refiner Accordion").info("Refiner swaps the model in the middle of generation; useful for Wan 2.2 <b>High Noise</b> to <b>Low Noise</b> switching").needs_reload_ui(),
+            "refiner_fast_sd": OptionInfo(False, 'Reload "state_dict" Only').info("EXPERIMENTAL").needs_reload_ui(),
             "refiner_use_steps": OptionInfo(False, 'Switch based on "steps" instead').info('by default, Refiner swaps the model based on "sigmas" to match <a href="https://www.reddit.com/r/StableDiffusion/comments/1n3qns1/wan_22_how_many_highsteps_are_needed_a_simple/">Wan 2.2</a> \'s behavior'),
-            "refiner_lora_replacement": OptionInfo(
-                "high_noise=low_noise",
-                "Lora Replacements",
-                gr.Textbox,
-                {"lines": 3, "max_lines": 12, "placeholder": "high_noise=low_noise"},
-            ),
-            "refiner_lora_explanation": OptionHTML("""
-Use the "Lora Replacements" to load different LoRAs between the normal pass and the refiner pass.<br>
-Separate the original and the target with an equal sign; Place each entry in its own line.
-                """),
         },
     )
 )
@@ -485,6 +480,7 @@ options_templates.update(
             "add_version_to_infotext": OptionInfo(True, "Add webui version to infotext"),
             "disable_weights_auto_swap": OptionInfo(True, "Ignore the Checkpoint when reading infotext"),
             "disable_modules_auto_swap": OptionInfo(True, "Ignore the VAE / Text Encoder when reading infotext"),
+            "strip_whitespaces": OptionInfo(True, "Remove leading and trailing whitespaces from the prompts"),
             "infotext_skip_pasting": OptionInfo([], "Ignore fields when reading infotext", ui_components.DropdownMulti, lambda: {"choices": shared_items.get_infotext_names()}),
             "infotext_styles": OptionInfo("Apply if any", "Infer Styles when reading infotext", gr.Radio, {"choices": ("Ignore", "Apply", "Apply if any", "Discard")}).html("""
 <ul style='margin-left: 1.5em'>

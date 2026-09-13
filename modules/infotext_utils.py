@@ -21,7 +21,6 @@ sys.modules["modules.generation_parameters_copypaste"] = sys.modules[__name__]  
 re_param_code = r'\s*([\w\s\-\/]+):\s*("(?:\\.|[^\\"])+"|[^,]*)(?:,|$)'
 re_param = re.compile(re_param_code)
 re_imagesize = re.compile(r"^(\d+)x(\d+)$")
-re_cfg = re.compile(r"CFG scale:\s*([\d\.]+)")
 type_of_gr_update = type(gr.skip())
 
 
@@ -375,24 +374,22 @@ def parse_generation_parameters(x: str, skip_fields: list[str] | None = None):
     _neg: bool = False
 
     for line in lines:
-        line = line.strip()
-        if line.startswith("Negative prompt:"):
-            line = line.replace("Negative prompt:", "").strip()
-            _neg = True
+        if shared.opts.strip_whitespaces:
+            line = line.strip()
+            if line.startswith("Negative prompt:"):
+                line = line.replace("Negative prompt:", "").strip()
+                _neg = True
+        else:
+            if line.lstrip().startswith("Negative prompt:"):
+                line = line.replace("Negative prompt:", "")
+                _neg = True
         (_negative_prompts if _neg else _prompts).append(line)
 
     prompt: str = "\n".join(_prompts)
     negative_prompt: str = "\n".join(_negative_prompts)
 
-    # region CivitAI
-    if "flux" in lastline.lower():
-        m = re.search(re_cfg, lastline)
-        if m and float(m.group(1)) > 1.0:
-            lastline = lastline.replace("CFG scale: ", "CFG scale: 1.0, Distilled CFG Scale: ")
-
     lastline = lastline.replace("Sampler: Undefined,", "Sampler: Euler, Schedule type: Simple,")
     lastline = lastline.replace(", width:", ", Size-1:").replace(", height:", ", Size-2:")
-    # endregion
 
     res: dict[str, Any] = {}
 

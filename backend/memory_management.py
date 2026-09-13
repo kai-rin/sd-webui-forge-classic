@@ -20,7 +20,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import gc
-import importlib
 import logging
 import os
 import platform
@@ -36,7 +35,7 @@ import torch
 
 from backend.args import args
 from backend.logging import setup_logger
-from backend.quant_ops import QuantizedTensor
+from backend.quant_ops import QuantizedTensor, ck
 
 if TYPE_CHECKING:
     from backend.patcher.base import ModelPatcher
@@ -195,14 +194,14 @@ try:
 except Exception:
     pass
 
-OOM_EXCEPTION = getattr(torch, "OutOfMemoryError", Exception)
-ACCELERATOR_ERROR = getattr(torch, "AcceleratorError", RuntimeError)
+OOM_EXCEPTION = getattr(torch, "OutOfMemoryError", None)
+ACCELERATOR_ERROR = getattr(torch, "AcceleratorError", None)
 
 
 def is_oom(e: Exception) -> bool:
-    if isinstance(e, OOM_EXCEPTION):
+    if OOM_EXCEPTION is not None and isinstance(e, OOM_EXCEPTION):
         return True
-    if isinstance(e, ACCELERATOR_ERROR) or "out of memory" in str(e).lower():
+    if (ACCELERATOR_ERROR is not None and isinstance(e, ACCELERATOR_ERROR)) or "out of memory" in str(e).lower():
         discard_cuda_async_error()
         return True
     return False
@@ -241,12 +240,19 @@ else:
     else:
         FLASH_IS_AVAILABLE = True
 
-try:
-    import bitsandbytes  # noqa: F401
-except Exception:
-    BNB_IS_AVAILABLE = False
+
+if not args.pynvml:
+    PYNVML_IS_AVAILABLE = False
 else:
-    BNB_IS_AVAILABLE = True
+    try:
+        import pynvml
+
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+    except Exception:
+        PYNVML_IS_AVAILABLE = False
+    else:
+        PYNVML_IS_AVAILABLE = True
 
 
 def amd_min_version(device: torch.device = None, min_rdna_version: int = 0) -> bool:
@@ -302,17 +308,27 @@ if is_amd():
         except Exception:
             rocm_version = (6, -1)
 
+        def aotriton_supported() -> bool:
+            try:
+                if not torch.backends.cuda.is_flash_attention_available():
+                    return False
+                q = torch.empty((1, 1, 8, 64), dtype=torch.float16, device=get_torch_device())
+                params = torch.backends.cuda.SDPAParams(q, q, q, None, 0.0, False, False)
+                return torch.backends.cuda.can_use_flash_attention(params, False)
+            except Exception:
+                return False
+
         logger.info("AMD Arch: {}".format(arch))
         logger.info("ROCm Version: {}".format(rocm_version))
-        if importlib.util.find_spec("triton") is not None:
+        if aotriton_supported():
             if torch_version_numeric >= (2, 7):
-                if any((a in arch) for a in ["gfx90a", "gfx942", "gfx1100", "gfx1101", "gfx1151"]):
+                if any((a in arch) for a in ["gfx90a", "gfx942", "gfx950", "gfx1100", "gfx1101", "gfx1150", "gfx1151", "gfx1170"]):
                     ENABLE_PYTORCH_ATTENTION = True
             if rocm_version >= (7, 0):
-                if any((a in arch) for a in ["gfx1201"]):
+                if any((a in arch) for a in ["gfx1200", "gfx1201"]):
                     ENABLE_PYTORCH_ATTENTION = True
         if torch_version_numeric >= (2, 7) and rocm_version >= (6, 4):
-            if any((a in arch) for a in ["gfx1200", "gfx1201", "gfx950"]):
+            if any((a in arch) for a in ["gfx1200", "gfx1201", "gfx950", "gfx1170"]):
                 SUPPORT_FP8_OPS = True
 
     except Exception:
@@ -468,7 +484,7 @@ class LoadedModel:
         return self.model.model_size() - self.model.loaded_size()
 
     def model_memory_required(self, device):
-        if device == self.model.current_loaded_device():
+        if device == self.model.current_device:
             return self.model_offloaded_memory()
         else:
             return self.model_memory()
@@ -1008,7 +1024,7 @@ def cast_to(weight: torch.nn.Parameter, dtype: torch.dtype = None, device: torch
         with context or nullcontext():
             return weight.to(dtype=dtype, copy=copy)
 
-    if type(weight) not in (torch.Tensor, torch.nn.Parameter, QuantizedTensor):  # GGUF / BnB
+    if type(weight) not in (torch.Tensor, torch.nn.Parameter, QuantizedTensor):  # GGUF
         with context or nullcontext():
             return weight.to(dtype=dtype, device=device, non_blocking=non_blocking, copy=copy)
 
@@ -1059,8 +1075,15 @@ def flash_enabled() -> bool:
     return FLASH_IS_AVAILABLE
 
 
-def bnb_enabled() -> bool:
-    return BNB_IS_AVAILABLE
+def ck_enabled() -> bool:
+    if cpu_state is not CPUState.GPU:
+        return False
+    try:
+        CK_IS_AVAILABLE = ck.int8_attention_is_available()
+    except Exception:
+        return False
+    else:
+        return CK_IS_AVAILABLE and args.use_ck_attention
 
 
 def pytorch_attention_enabled() -> bool:
@@ -1116,6 +1139,12 @@ def get_free_memory(dev: torch.device = None, torch_free_too: bool = False) -> i
             mem_free_cuda, _ = torch.cuda.mem_get_info(dev)
             mem_free_torch = mem_reserved - mem_active
             mem_free_total = mem_free_cuda + mem_free_torch
+
+            if PYNVML_IS_AVAILABLE:
+                nvml_mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                torch_reserved = torch.cuda.memory_reserved(dev)
+                external = nvml_mem.used - torch_reserved
+                mem_free_total -= external
 
     if torch_free_too:
         return (mem_free_total, mem_free_torch)

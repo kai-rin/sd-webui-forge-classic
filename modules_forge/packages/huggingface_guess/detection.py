@@ -1,4 +1,4 @@
-# reference: https://github.com/Comfy-Org/ComfyUI/blob/v0.26.1/comfy/model_detection.py
+# https://github.com/Comfy-Org/ComfyUI/blob/v0.28.0/comfy/model_detection.py
 
 import logging
 
@@ -109,25 +109,6 @@ def detect_unet_config(state_dict: dict, key_prefix: str) -> dict:
         dit_config["guidance_embed"] = "{}time_text_embed.guidance_embedder.linear_1.weight".format(key_prefix) in state_dict_keys
         return dit_config
 
-    if "{}double_blocks.0.img_attn.proj.weight.quant_state.bitsandbytes__nf4".format(key_prefix) in state_dict_keys:  # flux1-dev-bnb-nf4
-        dit_config = {}
-        dit_config["image_model"] = "flux"
-        dit_config["in_channels"] = 16
-        dit_config["out_channels"] = 16
-        dit_config["vec_in_dim"] = 768
-        dit_config["context_in_dim"] = 4096
-        dit_config["hidden_size"] = 3072
-        dit_config["mlp_ratio"] = 4.0
-        dit_config["num_heads"] = 24
-        dit_config["depth"] = 19
-        dit_config["depth_single_blocks"] = 38
-        dit_config["axes_dim"] = [16, 56, 56]
-        dit_config["theta"] = 10000
-        dit_config["patch_size"] = 2
-        dit_config["qkv_bias"] = True
-        dit_config["guidance_embed"] = "{}guidance_in.in_layer.weight".format(key_prefix) in state_dict_keys
-        return dit_config
-
     if ("{}double_blocks.0.img_attn.norm.key_norm.scale".format(key_prefix) in state_dict_keys or "{}double_blocks.0.img_attn.norm.key_norm.weight".format(key_prefix) in state_dict_keys) and ("{}img_in.weight".format(key_prefix) in state_dict_keys or f"{key_prefix}distilled_guidance_layer.norms.0.scale" in state_dict_keys):  # Flux.1 / Flux.2
         dit_config = {}
         if "{}double_stream_modulation_img.lin.weight".format(key_prefix) in state_dict_keys:
@@ -212,7 +193,7 @@ def detect_unet_config(state_dict: dict, key_prefix: str) -> dict:
         dit_config["concat_padding_mask"] = True
         dit_config["crossattn_emb_channels"] = 1024
         dit_config["adaln_lora_dim"] = 256
-        dit_config["num_blocks"] = 28
+        dit_config["num_blocks"] = count_blocks(state_dict_keys, "{}blocks.".format(key_prefix) + "{}.")
         dit_config["num_heads"] = 16
         dit_config["rope_h_extrapolation_ratio"] = 4.0
         dit_config["rope_w_extrapolation_ratio"] = 4.0
@@ -221,14 +202,45 @@ def detect_unet_config(state_dict: dict, key_prefix: str) -> dict:
         return dit_config
 
     if (_lq_w_key := "{}lq_proj.latent_proj.0.weight".format(key_prefix)) in state_dict_keys:  # PiD
+        v15: bool = "{}lq_proj.pit_head.weight".format(key_prefix) in state_dict_keys
         _gate_prefix = "{}lq_proj.gate_modules.".format(key_prefix)
         num_gates = len({k[len(_gate_prefix) :].split(".")[0] for k in state_dict_keys if k.startswith(_gate_prefix)})
-        in_ch = int(state_dict[_lq_w_key].shape[1])
+        latent_proj_in_channels = int(state_dict[_lq_w_key].shape[1])
         dit_config = {"image_model": "pid"}
-        dit_config["lq_latent_channels"] = in_ch
-        dit_config["latent_spatial_down_factor"] = 16 if in_ch >= 64 else 8
+        dit_config["lq_hidden_dim"] = int(state_dict[_lq_w_key].shape[0])
+        dit_config["lq_latent_channels"] = latent_proj_in_channels
+        dit_config["latent_spatial_down_factor"] = 16 if latent_proj_in_channels >= 64 else 8
         if num_gates > 0:
             dit_config["lq_interval"] = (14 + num_gates - 1) // num_gates
+        if v15:
+            match latent_proj_in_channels:
+                case 16:  # Flux & QwenImage
+                    dit_config.update(
+                        {
+                            "lq_latent_channels": 16,
+                            "latent_spatial_down_factor": 8,
+                            "lq_latent_unpatchify_factor": 1,
+                        }
+                    )
+                case 32:  # Flux2
+                    dit_config.update(
+                        {
+                            "lq_latent_channels": 128,
+                            "latent_spatial_down_factor": 16,
+                            "lq_latent_unpatchify_factor": 2,
+                        }
+                    )
+
+            gate_weight = int(state_dict["{}lq_proj.gate_modules.0.content_proj.weight".format(key_prefix)].shape[0])
+            dit_config.update(
+                {
+                    "lq_conv_padding_mode": "replicate",
+                    "lq_gate_per_token": gate_weight == 1,
+                    "pit_lq_inject": True,
+                    "rope_ref_h": 2048,
+                    "rope_ref_w": 2048,
+                }
+            )
         return dit_config
 
     if "{}txt_norm.weight".format(key_prefix) in state_dict_keys:  # Qwen Image
